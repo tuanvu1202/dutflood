@@ -1,351 +1,1684 @@
 <!DOCTYPE html>
-<html lang="vi">
+<html lang="vi" class="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DUTFlood - Hệ thống Cảnh báo Ngập lụt & Dẫn đường Thông minh</title>
-    <!-- Tailwind CSS CDN -->
+    <title>DUTFlood — Cảnh báo Ngập & Dẫn đường Né ngập ĐH Bách Khoa Đà Nẵng</title>
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Three.js CDN -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <!-- Google Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+    <!-- Three.js r128 & OrbitControls -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
     <style>
-        body { font-family: 'Inter', sans-serif; }
+        :root {
+            --panel-bg: rgba(11, 19, 35, 0.84);
+            --panel-border: rgba(56, 189, 248, 0.24);
+        }
+        * {
+            box-sizing: border-box;
+            user-select: none;
+        }
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #060d1a;
+            font-family: 'Inter', sans-serif;
+            color: #f1f5f9;
+        }
+        .font-mono-num {
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .glass-card {
+            background: var(--panel-bg);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            border: 1px solid var(--panel-border);
+            box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+        }
+        #canvas-container {
+            position: fixed;
+            inset: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 1;
+        }
+        #labels-container {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 5;
+            overflow: hidden;
+        }
+        .map-label {
+            position: absolute;
+            transform: translate(-50%, -100%);
+            pointer-events: none;
+            transition: opacity 0.2s ease;
+            white-space: nowrap;
+        }
+        .ui-layer {
+            position: relative;
+            z-index: 10;
+            pointer-events: none;
+        }
+        .ui-interactive {
+            pointer-events: auto;
+        }
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.5);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(56, 189, 248, 0.35);
+            border-radius: 9999px;
+        }
+        @keyframes pulse-ring {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.65); }
+            50% { box-shadow: 0 0 20px 5px rgba(244, 63, 94, 0.3); }
+        }
+        .danger-pulse {
+            animation: pulse-ring 1.3s infinite;
+        }
     </style>
 </head>
-<body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col">
+<body class="w-screen h-screen overflow-hidden">
 
-    <!-- HEADER -->
-    <header class="bg-slate-800 border-b border-slate-700 px-6 py-4 flex items-center justify-between shadow-md">
-        <div class="flex items-center space-x-4">
-            <!-- Logo Bách Khoa -->
-            <img src="logo.jpg" alt="Logo DUT" class="w-12 h-12 object-contain bg-white rounded-lg p-1 shadow" onerror="this.src='https://placehold.co/48x48?text=DUT'">
+    <!-- 3D Scene Canvas -->
+    <div id="canvas-container"></div>
+
+    <!-- Floating 3D Landmark Labels Layer -->
+    <div id="labels-container"></div>
+
+    <!-- Top Floating Notification Banner -->
+    <div id="toast-banner" class="fixed top-20 left-1/2 -translate-x-1/2 z-30 pointer-events-none transition-all duration-300 opacity-0 -translate-y-3 max-w-xl w-[92%] sm:w-auto">
+        <div id="toast-inner" class="glass-card px-4 py-3 rounded-2xl flex items-center gap-3 border border-cyan-400/50 shadow-2xl">
+            <span id="toast-icon" class="text-2xl">🌤️</span>
             <div>
-                <h1 class="text-xl font-bold tracking-wide text-blue-400">DUTFlood</h1>
-                <p class="text-xs text-slate-400">Hệ thống Cảnh báo Ngập lụt & Dẫn đường Thông minh (ĐH Bách Khoa - ĐHĐN)</p>
+                <div id="toast-title" class="font-bold text-sm text-white">TRẠNG THÁI GIAO THÔNG HÒA KHÁNH</div>
+                <div id="toast-desc" class="text-xs text-slate-200 mt-0.5">Đường Nguyễn Lương Bằng khô ráo, sinh viên đi thẳng về trọ mất 6 phút.</div>
             </div>
         </div>
-        <div class="flex items-center space-x-3">
-            <button onclick="openModal('modal-guide')" class="bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition shadow">
-                📖 Hướng dẫn Thuyết trình
-            </button>
-            <button onclick="openModal('modal-ai')" class="bg-amber-600 hover:bg-amber-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition shadow">
-                💡 AI vs Non-AI
-            </button>
-        </div>
-    </header>
+    </div>
 
-    <!-- MAIN CONTENT CONTAINER -->
-    <main class="flex-1 p-6 grid grid-cols-1 lg:grid-cols-3 gap-6 max-w-7xl mx-auto w-full">
-        
-        <!-- CỘT TRÁI & GIỮA: SA BÀN & ĐIỀU KHIỂN -->
-        <div class="lg:col-span-2 flex flex-col space-y-6">
-            
-            <!-- SA BÀN 3D THREE.JS -->
-            <div class="bg-slate-800 border border-slate-700 rounded-xl p-4 shadow-xl flex flex-col relative overflow-hidden">
-                <div class="flex justify-between items-center mb-3">
-                    <h2 class="text-base font-semibold text-slate-200 flex items-center">
-                        <span class="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse mr-2"></span>
-                        Sa bàn Mô phỏng Khu vực Trọng điểm (Bách Khoa - Hòa Khánh - Mẹ Suốt)
-                    </h2>
-                    <span id="status-badge" class="px-2.5 py-1 rounded text-xs font-semibold bg-emerald-900/60 text-emerald-400 border border-emerald-700">Trạng thái: An toàn</span>
+    <!-- Main UI Overlay -->
+    <div class="ui-layer w-full h-full flex flex-col justify-between p-2.5 sm:p-4">
+
+        <!-- ================= TOP HEADER ================= -->
+        <header class="ui-interactive glass-card rounded-2xl px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2.5">
+            <!-- Brand -->
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-lg bg-white p-0.5 flex items-center justify-center overflow-hidden shadow-md border border-white/20 shrink-0">
+                    <img src="logo.jpg" alt="DUTFlood Logo" class="w-full h-full object-contain">
                 </div>
-                
-                <!-- Canvas Container -->
-                <div id="canvas-container" class="w-full h-80 bg-slate-950 rounded-lg relative overflow-hidden border border-slate-800">
-                    <div class="absolute bottom-3 left-3 bg-slate-900/80 backdrop-blur px-3 py-1.5 rounded text-xs text-slate-300 border border-slate-700 pointer-events-none">
-                        💡 Mẹo: Dùng chuột trái xoay sa bàn, cuộn chuột phóng to/thu nhỏ.
+                <div>
+                    <div class="flex items-center gap-2">
+                        <h1 class="font-extrabold text-base sm:text-lg tracking-tight text-white">
+                            <span class="text-sky-400">DUTFlood</span>
+                        </h1>
+                        <span class="hidden md:inline-block text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-300 border border-sky-400/30">
+                            Khu vực ĐH Bách Khoa Đà Nẵng
+                        </span>
+                    </div>
+                    <p class="text-[11px] text-slate-400 hidden sm:block">
+                        Hệ thống Cột đo IoT & AI Dự báo Ngập sớm 30 phút — Dẫn đường né ngập cho sinh viên
+                    </p>
+                </div>
+            </div>
+
+            <!-- Active Route Badge -->
+            <div id="route-status-pill" class="flex items-center gap-2.5 px-3.5 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-400/40 text-emerald-300 text-xs font-bold transition-all">
+                <span id="route-status-dot" class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span id="route-status-text">LỘ TRÌNH ĐANG CHỌN: Đi thẳng Nguyễn Lương Bằng (6 phút)</span>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="flex items-center gap-2">
+                <button onclick="toggleLabels()" id="btn-labels"
+                        class="px-2.5 py-1.5 rounded-xl text-xs font-medium bg-slate-800/80 hover:bg-slate-700 text-slate-200 border border-slate-700 transition flex items-center gap-1">
+                    <span>🏷️</span>
+                    <span class="hidden lg:inline">Nhãn bản đồ: BẬT</span>
+                </button>
+
+                <button onclick="toggleAudio()" id="btn-audio"
+                        class="px-3 py-1.5 rounded-xl text-xs font-semibold bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-400/35 transition flex items-center gap-1.5">
+                    <span id="audio-icon">🔊</span>
+                    <span id="audio-label" class="hidden sm:inline">Tiếng mưa: BẬT</span>
+                </button>
+
+                <button onclick="openTeacherNoteModal()"
+                        class="px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 shadow shadow-amber-500/25 transition flex items-center gap-1.5">
+                    <span>🎓</span>
+                    <span>AI vs Không AI</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- ================= MIDDLE CONTENT ================= -->
+        <div class="flex-1 flex flex-col lg:flex-row justify-between items-start lg:items-stretch gap-3 my-2.5 overflow-hidden">
+
+            <!-- Left Column: Weather Control & Camera Shortcuts -->
+            <div class="flex flex-col justify-between gap-2.5 w-full lg:w-[290px]">
+                <!-- Rainfall Slider Card -->
+                <div class="ui-interactive glass-card rounded-2xl p-3.5 space-y-3">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                            <span>🌧️</span> Giả lập Lượng mưa hiện tại
+                        </span>
+                        <span id="rain-badge" class="font-mono-num text-sm font-extrabold px-2 py-0.5 rounded-lg bg-sky-500/20 text-sky-300 border border-sky-400/30">
+                            0 mm/h
+                        </span>
+                    </div>
+
+                    <input id="rain-slider" type="range" min="0" max="150" value="0" step="5"
+                           oninput="onRainSliderInput(this.value)"
+                           class="w-full accent-sky-400 cursor-pointer h-2 rounded-lg bg-slate-800">
+
+                    <div class="flex justify-between text-[10px] text-slate-400 font-medium">
+                        <span>0 (Tạnh)</span>
+                        <span>50 (Mưa vừa)</span>
+                        <span>100+ (Mưa rất to)</span>
+                    </div>
+
+                    <div id="weather-desc" class="text-[11px] text-slate-300 bg-slate-900/80 rounded-xl p-2.5 border border-slate-800 leading-relaxed">
+                        ☀️ <strong>Trời quang mây tạnh:</strong> Các tuyến đường quanh ĐH Bách Khoa khô ráo hoàn toàn.
+                    </div>
+
+                    <!-- Camera Quick Views -->
+                    <div class="pt-1 border-t border-slate-800/80">
+                        <div class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold mb-1.5">Góc nhìn Camera 3D nhanh</div>
+                        <div class="grid grid-cols-3 gap-1.5">
+                            <button onclick="setCameraView('overview')" class="px-2 py-1.5 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-[11px] font-medium text-slate-200 border border-slate-700 transition">
+                                🗺️ Toàn khu
+                            </button>
+                            <button onclick="setCameraView('mesuot')" class="px-2 py-1.5 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-[11px] font-medium text-rose-300 border border-slate-700 transition">
+                                🌊 Rốn Mẹ Suốt
+                            </button>
+                            <button onclick="setCameraView('detour')" class="px-2 py-1.5 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-[11px] font-medium text-emerald-300 border border-slate-700 transition">
+                                🛵 Đường cao
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Visual Reference Legend: Scooter Exhaust Pipe 30cm -->
+                <div class="ui-interactive glass-card rounded-2xl p-3 hidden sm:block">
+                    <div class="text-xs font-bold text-white mb-1.5 flex items-center gap-1.5">
+                        <span>🛵</span> Mốc ngập dễ nhớ với sinh viên
+                    </div>
+                    <div class="space-y-1.5 text-[11px]">
+                        <div class="flex items-center justify-between">
+                            <span class="flex items-center gap-1.5 text-emerald-300"><span class="w-2.5 h-2.5 rounded-full bg-emerald-400"></span> Dưới 15 cm</span>
+                            <span class="text-slate-400">Đi lại bình thường</span>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <span class="flex items-center gap-1.5 text-amber-300"><span class="w-2.5 h-2.5 rounded-full bg-amber-400"></span> 15 – 30 cm</span>
+                            <span class="text-slate-400">Ngập nửa bánh xe</span>
+                        </div>
+                        <div class="flex items-center justify-between font-semibold">
+                            <span class="flex items-center gap-1.5 text-rose-400"><span class="w-2.5 h-2.5 rounded-full bg-rose-500"></span> Trên 30 cm</span>
+                            <span class="text-rose-300">Lút ống pô ➔ Chết máy!</span>
+                        </div>
                     </div>
                 </div>
             </div>
 
-            <!-- BẢNG ĐIỀU KHIỂN & KỊCH BẢN DEMO -->
-            <div class="bg-slate-800 border border-slate-700 rounded-xl p-5 shadow-xl">
-                <h3 class="text-base font-semibold text-slate-200 mb-4">🎛️ Bảng Điều khiển Demo (Dành cho Nhóm thuyết trình)</h3>
-                
+            <!-- Right Column: 4 IoT Poles Live Water vs AI +30m Forecast -->
+            <aside class="ui-interactive glass-card rounded-2xl w-full lg:w-[390px] p-3.5 flex flex-col justify-between overflow-y-auto max-h-[48vh] lg:max-h-full">
+                <div>
+                    <div class="flex items-center justify-between border-b border-slate-700/70 pb-2.5">
+                        <div>
+                            <h2 class="font-bold text-sm text-white flex items-center gap-1.5">
+                                <span>📡</span> 4 Cột Đo Ngập IoT & Dự Báo AI
+                            </h2>
+                            <p class="text-[11px] text-slate-400 mt-0.5">Ngưỡng ngập ống pô chết máy xe tay ga: <strong class="text-rose-400">30 cm</strong></p>
+                        </div>
+                        <span id="community-pin-badge" class="hidden px-2 py-0.5 rounded-lg bg-rose-500/20 border border-rose-400/40 text-rose-300 text-[10px] font-bold">
+                            📍 +1 Báo ngập SV
+                        </span>
+                    </div>
+
+                    <!-- Table of 4 Poles -->
+                    <div id="poles-list" class="mt-2.5 space-y-2">
+                        <!-- Rendered via JS -->
+                    </div>
+
+                    <!-- Smart Route Decision Box -->
+                    <div id="ai-decision-card" class="mt-3 p-3 rounded-xl bg-slate-900/90 border border-emerald-400/35 transition-all">
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs font-bold text-sky-300 flex items-center gap-1.5">
+                                <span>🧠</span> Phân tích & Gợi ý Lộ trình về trọ
+                            </span>
+                            <span id="eta-badge" class="font-mono-num text-xs font-bold px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300">
+                                ⏱️ 6 phút
+                            </span>
+                        </div>
+                        <p id="ai-decision-text" class="text-xs text-slate-200 mt-1.5 leading-relaxed">
+                            ✅ <strong>An toàn:</strong> Cả hiện tại và dự báo 30 phút tới đều khô ráo. Hệ thống dẫn xe sinh viên đi thẳng <strong>Nguyễn Lương Bằng ➔ Tôn Đức Thắng</strong> (ngắn nhất 1.8 km).
+                        </p>
+                    </div>
+                </div>
+
+                <div class="mt-2.5 pt-2 border-t border-slate-800 text-[11px] text-slate-400 flex items-center justify-between">
+                    <span>💡 Kéo chuột trái để xoay sa bàn • Cuộn để phóng to</span>
+                    <button onclick="openPhotoModal()" class="text-sky-400 hover:text-sky-300 font-semibold underline">
+                        Mở gửi ảnh SV
+                    </button>
+                </div>
+            </aside>
+        </div>
+
+        <!-- ================= BOTTOM 1-CLICK DEMO SCENARIOS BAR ================= -->
+        <footer class="ui-interactive glass-card rounded-2xl p-2.5 sm:px-4 sm:py-3 flex flex-wrap items-center justify-between gap-2">
+            <div class="flex items-center gap-2">
+                <span class="px-2.5 py-1 rounded-lg bg-sky-500/20 border border-sky-400/40 text-sky-300 text-[11px] font-bold uppercase tracking-wider">
+                    🎬 Kịch bản Thuyết trình 1-Chạm
+                </span>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-2 flex-1 justify-end">
+                <!-- Scenario 1 -->
+                <button onclick="runScenarioDry()"
+                        class="px-3 py-2 rounded-xl text-xs font-semibold bg-emerald-500/20 hover:bg-emerald-500/35 text-emerald-200 border border-emerald-400/40 active:scale-[0.98] transition flex items-center gap-1.5">
+                    <span>☀️</span>
+                    <span>1. Trời tạnh ráo (Đường tắt 6p)</span>
+                </button>
+
+                <!-- Scenario 2: THE AI WOW FACTOR -->
+                <button onclick="runScenarioAIEarlyWarning()"
+                        class="px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold bg-gradient-to-r from-amber-500 via-orange-500 to-rose-600 text-white shadow-lg shadow-orange-500/30 hover:brightness-110 active:scale-[0.98] transition flex items-center gap-1.5 border border-amber-300/50">
+                    <span>⛈️</span>
+                    <span>2. Mưa xối xả 110mm/h (AI Dự báo ngập trước 30p!)</span>
+                </button>
+
+                <!-- Scenario 3 -->
+                <button onclick="runScenarioDeepFlood()"
+                        class="px-3 py-2 rounded-xl text-xs font-semibold bg-rose-500/25 hover:bg-rose-500/40 text-rose-200 border border-rose-400/50 active:scale-[0.98] transition flex items-center gap-1.5">
+                    <span>🌊</span>
+                    <span>3. Ngập sâu diện rộng (Cột báo Đỏ)</span>
+                </button>
+
+                <!-- Scenario 4: AI Computer Vision Photo Check -->
+                <button onclick="openPhotoModal()"
+                        class="px-3.5 py-2 rounded-xl text-xs font-bold bg-indigo-500/30 hover:bg-indigo-500/45 text-indigo-200 border border-indigo-400/50 active:scale-[0.98] transition flex items-center gap-1.5">
+                    <span>📸</span>
+                    <span>4. AI Duyệt ảnh Sinh viên báo ngập</span>
+                </button>
+            </div>
+        </footer>
+    </div>
+
+    <!-- ================= MODAL 1: COMMUNITY PHOTO AI VERIFICATION ================= -->
+    <div id="photo-modal" class="fixed inset-0 z-40 bg-slate-950/80 backdrop-blur-md hidden items-center justify-center p-3 sm:p-6">
+        <div class="glass-card rounded-3xl max-w-3xl w-full overflow-hidden border border-indigo-400/40">
+            <div class="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/70">
+                <div class="flex items-center gap-3">
+                    <span class="text-2xl">📸</span>
+                    <div>
+                        <h2 class="text-base sm:text-lg font-extrabold text-white">Chức năng Cộng đồng: AI Kiểm duyệt Ảnh Sinh viên Báo ngập</h2>
+                        <p class="text-xs text-slate-400">Giúp phát hiện ngập ở các hẻm nhỏ chưa lắp cột IoT — dùng AI Thị giác máy tính để lọc ảnh giả / trêu đùa</p>
+                    </div>
+                </div>
+                <button onclick="closePhotoModal()" class="px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700">
+                    ✕ Đóng
+                </button>
+            </div>
+
+            <div class="p-6 space-y-5 max-h-[82vh] overflow-y-auto">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <!-- Test Photo 1: Real Flood on Me Suot -->
+                    <div class="bg-slate-900/90 rounded-2xl p-4 border border-slate-700 flex flex-col justify-between">
+                        <div>
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-xs font-bold text-sky-300">Mẫu thử 1: Ảnh chụp tại Kiệt Mẹ Suốt</span>
+                                <span class="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-300">SV Bách Khoa gửi</span>
+                            </div>
+                            <canvas id="canvas-photo-real" width="320" height="180" class="w-full rounded-xl border border-slate-700 mb-3"></canvas>
+                            <p class="text-xs text-slate-300">Mô tả đính kèm: <em>"Đầu đường Mẹ Suốt nước dâng gần nửa bánh xe rồi anh em né gấp!"</em></p>
+                        </div>
+                        <button onclick="verifyPhotoWithAI('real')"
+                                class="mt-3 w-full py-2.5 rounded-xl text-xs font-bold bg-sky-500 hover:bg-sky-400 text-slate-950 transition shadow">
+                            🔍 Chạy AI Kiểm tra & Ghim lên Bản đồ 3D
+                        </button>
+                    </div>
+
+                    <!-- Test Photo 2: Fake / Dry Prank Photo -->
+                    <div class="bg-slate-900/90 rounded-2xl p-4 border border-slate-700 flex flex-col justify-between">
+                        <div>
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-xs font-bold text-amber-300">Mẫu thử 2: Ảnh mặt đường khô / Báo giả</span>
+                                <span class="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-300">Tài khoản ẩn danh</span>
+                            </div>
+                            <canvas id="canvas-photo-fake" width="320" height="180" class="w-full rounded-xl border border-slate-700 mb-3"></canvas>
+                            <p class="text-xs text-slate-300">Mô tả đính kèm: <em>"Ngập tới nóc nhà rồi nghỉ học thôi mọi người ơi haha!"</em></p>
+                        </div>
+                        <button onclick="verifyPhotoWithAI('fake')"
+                                class="mt-3 w-full py-2.5 rounded-xl text-xs font-bold bg-indigo-500 hover:bg-indigo-400 text-white transition shadow">
+                            🔍 Chạy AI Kiểm tra Chống Tin Giả
+                        </button>
+                    </div>
+                </div>
+
+                <!-- AI Inspection Result Box -->
+                <div id="photo-ai-result" class="p-4 rounded-2xl bg-slate-950/90 border border-slate-800 text-xs text-slate-300 leading-relaxed">
+                    👆 <strong>Hướng dẫn khi thuyết trình:</strong> Bấm thử lần lượt 2 nút phía trên để cả lớp thấy cách mô hình AI Nhận dạng ảnh phân biệt <strong>ảnh ngập thật</strong> (tự động cắm ghim cảnh báo lên sa bàn 3D) và <strong>ảnh trêu đùa</strong>.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================= MODAL 2: LECTURER Q&A CHEAT SHEET (AI vs NON-AI) ================= -->
+    <div id="teacher-modal" class="fixed inset-0 z-40 bg-slate-950/80 backdrop-blur-md hidden items-center justify-center p-3 sm:p-6">
+        <div class="glass-card rounded-3xl max-w-3xl w-full overflow-hidden border border-amber-400/40">
+            <div class="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/70">
+                <div class="flex items-center gap-3">
+                    <span class="text-2xl">🎓</span>
+                    <div>
+                        <h2 class="text-base sm:text-lg font-extrabold text-white">Tóm tắt Phân tích Kỹ thuật</h2>
+                    </div>
+                </div>
+                <button onclick="closeTeacherNoteModal()" class="px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700">
+                    ✕ Đóng
+                </button>
+            </div>
+
+            <div class="p-6 space-y-4 max-h-[80vh] overflow-y-auto text-xs leading-relaxed">
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <!-- Thanh trượt lượng mưa -->
-                    <div class="bg-slate-900/60 p-4 rounded-lg border border-slate-700/60">
-                        <label class="block text-sm font-medium text-slate-300 mb-2">
-                            Lượng mưa giả lập: <span id="rain-val" class="text-blue-400 font-bold">15</span> mm/h
-                        </label>
-                        <input type="range" id="rain-slider" min="0" max="150" value="15" step="5" 
-                               oninput="updateRain(this.value)"
-                               class="w-full accent-blue-500 cursor-pointer">
-                        <div class="flex justify-between text-xs text-slate-400 mt-1">
-                            <span>Tạnh ráo (0)</span>
-                            <span>Mưa vừa (50)</span>
-                            <span>Mưa bão lớn (150)</span>
+                    <div class="p-4 rounded-2xl bg-sky-950/40 border border-sky-400/30 space-y-2.5">
+                        <div class="text-sm font-extrabold text-sky-300 flex items-center gap-2">
+                            <span>🧠</span> 2 Chức năng CÓ DÙNG AI
                         </div>
-                    </div>
-
-                    <!-- Nút kịch bản nhanh -->
-                    <div class="flex flex-col justify-between space-y-2">
-                        <button onclick="setScenario(1)" class="w-full bg-slate-700 hover:bg-slate-600 text-left px-3 py-2 rounded text-xs text-slate-200 transition font-medium flex items-center justify-between">
-                            <span>☀️ 1. Kịch bản Trời tạnh ráo (Bình thường)</span>
-                            <span class="text-slate-400">0-20mm/h</span>
-                        </button>
-                        <button onclick="setScenario(2)" class="w-full bg-blue-900/40 hover:bg-blue-900/60 border border-blue-700/50 text-left px-3 py-2 rounded text-xs text-blue-200 transition font-medium flex items-center justify-between">
-                            <span>⛈️ 2. Kịch bản Mưa lớn (AI Dự báo ngập sớm)</span>
-                            <span class="text-blue-400">90mm/h</span>
-                        </button>
-                        <button onclick="setScenario(3)" class="w-full bg-red-900/40 hover:bg-red-900/60 border border-red-700/50 text-left px-3 py-2 rounded text-xs text-red-200 transition font-medium flex items-center justify-between">
-                            <span>🌊 3. Kịch bản Ngập sâu diện rộng (Mẹ Suốt)</span>
-                            <span class="text-red-400">140mm/h</span>
-                        </button>
-                    </div>
-                </div>
-            </div>
-
-        </div>
-
-        <!-- CỘT PHẢI: THÔNG TIN CẢM BIẾN & KIỂM DUYỆT ẢNH AI -->
-        <div class="flex flex-col space-y-6">
-            
-            <!-- THÔNG SỐ CẢM BIẾN THỜI GIAN THỰC -->
-            <div class="bg-slate-800 border border-slate-700 rounded-xl p-5 shadow-xl">
-                <h3 class="text-base font-semibold text-slate-200 mb-3">📊 Quan trắc IoT Thời gian thực</h3>
-                
-                <div class="space-y-3">
-                    <div class="bg-slate-900/80 p-3 rounded-lg border border-slate-700 flex justify-between items-center">
                         <div>
-                            <p class="text-xs text-slate-400">Cảm biến Ngã ba Tôn Đức Thắng</p>
-                            <p id="sensor-1" class="text-lg font-bold text-emerald-400">12 cm <span class="text-xs font-normal text-slate-400">(An toàn)</span></p>
+                            <strong class="text-white">1. Dự báo mực nước trước 30 phút (Bài toán Dự đoán):</strong>
+                            <p class="text-slate-300 mt-0.5">
+                                • <strong>Đầu vào:</strong> Chuỗi mực nước 15 phút qua từ cột đo siêu âm + cường độ mưa (mm/h) + độ trũng từng khu vực.<br>
+                                • <strong>Đầu ra:</strong> Con số mực nước dự kiến sau 30 phút (ví dụ: <code>42 cm</code> tại Ngã ba Tôn Đức Thắng) để sinh viên né trước khi bị kẹt.
+                            </p>
                         </div>
-                        <span class="px-2 py-1 bg-emerald-950 text-emerald-400 text-xs rounded border border-emerald-800">Ổn định</span>
-                    </div>
-
-                    <div class="bg-slate-900/80 p-3 rounded-lg border border-slate-700 flex justify-between items-center">
                         <div>
-                            <p class="text-xs text-slate-400">Cảm biến Rốn ngập Mẹ Suốt</p>
-                            <p id="sensor-2" class="text-lg font-bold text-emerald-400">18 cm <span class="text-xs font-normal text-slate-400">(An toàn)</span></p>
+                            <strong class="text-white">2. Kiểm duyệt ảnh sinh viên báo ngập (Nhận dạng ảnh):</strong>
+                            <p class="text-slate-300 mt-0.5">
+                                • <strong>Đầu vào:</strong> Ảnh chụp từ điện thoại người dân/sinh viên gửi lên.<br>
+                                • <strong>Đầu ra:</strong> Nhãn <code>Ngập_Thật</code> hay <code>Ảnh_Rác</code> để tự động duyệt nhanh trong 1 giây mà không cần quản trị viên ngồi trực đêm mưa.
+                            </p>
                         </div>
-                        <span class="px-2 py-1 bg-emerald-950 text-emerald-400 text-xs rounded border border-emerald-800">Ổn định</span>
                     </div>
 
-                    <div class="bg-blue-950/40 p-3 rounded-lg border border-blue-800/60">
-                        <p class="text-xs font-semibold text-blue-300 mb-1">🤖 AI Dự báo Mực nước (Sau 30 phút):</p>
-                        <p id="ai-prediction-text" class="text-sm text-slate-200">Lượng mưa ổn định, các tuyến đường xung quanh trường thông thoáng hoàn toàn.</p>
-                    </div>
-                </div>
-            </div>
-
-            <!-- TÍNH NĂNG KIỂM DUYỆT ẢNH CỘNG ĐỒNG -->
-            <div class="bg-slate-800 border border-slate-700 rounded-xl p-5 shadow-xl flex-1 flex flex-col justify-between">
-                <div>
-                    <h3 class="text-base font-semibold text-slate-200 mb-2">📸 Kiểm duyệt Ảnh Báo ngập (AI)</h3>
-                    <p class="text-xs text-slate-400 mb-4">Sinh viên gửi ảnh thực tế lên hệ thống; AI kiểm tra xem có đúng là ảnh ngập nước thật hay ảnh đùa cợt trước khi đưa lên bản đồ.</p>
-                    
-                    <div class="grid grid-cols-2 gap-2 mb-4">
-                        <button onclick="testImageAI(true)" class="bg-slate-700 hover:bg-slate-600 border border-slate-600 p-2.5 rounded-lg text-xs text-left transition">
-                            <span class="font-semibold text-emerald-400 block mb-0.5">📁 Test Ảnh Thật</span>
-                            <span class="text-slate-400 text-[11px]">Đường ngập nước mưa</span>
-                        </button>
-                        <button onclick="testImageAI(false)" class="bg-slate-700 hover:bg-slate-600 border border-slate-600 p-2.5 rounded-lg text-xs text-left transition">
-                            <span class="font-semibold text-red-400 block mb-0.5">📁 Test Ảnh Giả / Sai</span>
-                            <span class="text-slate-400 text-[11px]">Ảnh meme / không liên quan</span>
-                        </button>
+                    <div class="p-4 rounded-2xl bg-emerald-950/35 border border-emerald-400/30 space-y-2.5">
+                        <div class="text-sm font-extrabold text-emerald-300 flex items-center gap-2">
+                            <span>⚙️</span> 2 Chức năng CỐ TÌNH KHÔNG DÙNG AI
+                        </div>
+                        <div>
+                            <strong class="text-white">1. Bật đèn cảnh báo Xanh/Vàng/Đỏ trên cột đo IoT:</strong>
+                            <p class="text-slate-300 mt-0.5">
+                                • Chỉ cần câu lệnh điều kiện <code>if (muc_nuoc &gt; 30cm)</code> nạp thẳng vào mạch ESP32. Vừa chính xác 100%, vừa tiết kiệm điện pin năng lượng mặt trời và vẫn sáng đèn cảnh báo tại chỗ kể cả khi đứt cáp mạng!
+                            </p>
+                        </div>
+                        <div>
+                            <strong class="text-white">2. Vẽ đường vòng né ngập (Đường Ngô Sĩ Liên – Âu Cơ):</strong>
+                            <p class="text-slate-300 mt-0.5">
+                                • Khi AI đã chỉ ra đoạn đường nào sắp ngập &gt; 30cm, hệ thống tăng "trọng số" đoạn đó lên cao và dùng <strong>thuật toán tìm đường ngắn nhất Dijkstra / A* truyền thống</strong> trên bản đồ số — nhanh, nhẹ và luôn ra đường đi tối ưu.
+                            </p>
+                        </div>
                     </div>
                 </div>
 
-                <div id="ai-image-result" class="bg-slate-900 p-3 rounded-lg border border-slate-700 text-xs text-slate-300 min-h-[60px] flex items-center justify-center text-center">
-                    Chưa có ảnh kiểm duyệt. Vui lòng bấm nút test phía trên.
+                <div class="p-3.5 rounded-2xl bg-slate-900/90 border border-slate-700 text-slate-300">
+                    🔒 <strong>Quyền riêng tư & Rủi ro kỹ thuật (Mục 9):</strong> Cột đo chỉ dùng cảm biến khoảng cách siêu âm chiếu xuống mặt nước (không quay camera đường phố). Với ảnh sinh viên gửi lên, hệ thống tự động làm mờ biển số xe/khuôn mặt trước khi hiển thị công khai. Nếu rác trôi làm nhiễu cảm biến siêu âm, hệ thống lọc trung vị 10 lần đo liên tiếp để loại bỏ số nhảy bất thường.
                 </div>
-            </div>
-
-        </div>
-
-    </main>
-
-    <!-- FOOTER -->
-    <footer class="bg-slate-800 border-t border-slate-700 py-3 text-center text-xs text-slate-400">
-        DUTFlood &copy; 2026 - Đồ án Bài tập lớn Nhập môn ngành CNTT | Trường Đại học Bách Khoa - ĐHĐN
-    </footer>
-
-    <!-- MODAL HƯỚNG DẪN THUYẾT TRÌNH -->
-    <div id="modal-guide" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden items-center justify-center p-4 z-50">
-        <div class="bg-slate-800 border border-slate-700 rounded-2xl max-w-2xl w-full p-6 shadow-2xl max-h-[85vh] overflow-y-auto">
-            <div class="flex justify-between items-center mb-4 border-b border-slate-700 pb-3">
-                <h3 class="text-lg font-bold text-blue-400">📖 Hướng dẫn Thuyết trình & Bảo vệ 10 Điểm</h3>
-                <button onclick="closeModal('modal-guide')" class="text-slate-400 hover:text-white text-xl font-bold">&times;</button>
-            </div>
-            <div class="space-y-4 text-sm text-slate-300">
-                <div>
-                    <h4 class="font-semibold text-slate-100 mb-1">1. Điểm nhấn thực tế của đề tài:</h4>
-                    <p>Gắn liền với sinh viên Bách Khoa (khu vực Hòa Khánh, Tôn Đức Thắng, rốn ngập Mẹ Suốt). Đề tài tập trung giải quyết đúng một nỗi sợ mùa mưa bão.</p>
-                </div>
-                <div>
-                    <h4 class="font-semibold text-slate-100 mb-1">2. Kịch bản Demo 60 giây trên lớp:</h4>
-                    <p>• Bấm nút <b>Trời tạnh ráo</b>: Cho thấy giao diện sa bàn thông thoáng, xe chạy bình thường.<br>
-                    • Bấm nút <b>Mưa lớn</b>: Thể hiện AI dự báo ngập trước 30 phút, tự động đổi hướng xe máy sinh viên tránh đường trũng.<br>
-                    • Bấm nút <b>Test Ảnh AI</b>: Chứng minh hệ thống lọc được ảnh báo ngập giả mạo.</p>
-                </div>
-            </div>
-            <div class="mt-6 text-right">
-                <button onclick="closeModal('modal-guide')" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-medium">Đã hiểu, đóng lại</button>
             </div>
         </div>
     </div>
 
-    <!-- MODAL AI VS NON-AI -->
-    <div id="modal-ai" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden items-center justify-center p-4 z-50">
-        <div class="bg-slate-800 border border-slate-700 rounded-2xl max-w-2xl w-full p-6 shadow-2xl max-h-[85vh] overflow-y-auto">
-            <div class="flex justify-between items-center mb-4 border-b border-slate-700 pb-3">
-                <h3 class="text-lg font-bold text-amber-400">💡 Phân định Rạch ròi: Chỗ nào dùng AI & Không dùng AI?</h3>
-                <button onclick="closeModal('modal-ai')" class="text-slate-400 hover:text-white text-xl font-bold">&times;</button>
-            </div>
-            <div class="space-y-4 text-sm text-slate-300">
-                <div class="bg-slate-900 p-3 rounded-lg border border-slate-700">
-                    <h4 class="font-semibold text-blue-400 mb-1">🤖 Chỗ có dùng AI (Mục 5 trong đề bài):</h4>
-                    <p>• <b>Dự báo mực nước ngập (Time-series Prediction):</b> Dùng mô hình học máy học từ lượng mưa hiện tại và dữ liệu lịch sử để dự báo mức ngập sau 30 phút.<br>
-                    • <b>Kiểm duyệt ảnh báo ngập (Image Classification):</b> Dùng thị giác máy tính nhận dạng xem ảnh người dùng gửi lên có đúng là ngập lụt hay không.</p>
-                </div>
-                <div class="bg-slate-900 p-3 rounded-lg border border-slate-700">
-                    <h4 class="font-semibold text-emerald-400 mb-1">⚙️ Chỗ CỐ TÌNH KHÔNG DÙNG AI:</h4>
-                    <p>• <b>Đo mực nước thực tế:</b> Dùng cảm biến siêu âm phần cứng đọc khoảng cách đơn thuần.<br>
-                    • <b>Tính toán lộ trình né ngập:</b> Dùng thuật toán tìm đường truyền thống (Dijkstra) vì cho kết quả chính xác tuyệt đối 100%, không cần dùng AI phỏng đoán.</p>
-                </div>
-            </div>
-            <div class="mt-6 text-right">
-                <button onclick="closeModal('modal-ai')" class="bg-amber-600 hover:bg-amber-500 text-white px-4 py-2 rounded-lg text-sm font-medium">Tuyệt vời, đã rõ</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- SCRIPT MÔ PHỎNG THREE.JS & LOGIC -->
+    <!-- ================= THREE.JS & SIMULATION SCRIPT ================= -->
     <script>
-        // Modal Handlers
-        function openModal(id) { document.getElementById(id).classList.remove('hidden'); document.getElementById(id).classList.add('flex'); }
-        function closeModal(id) { document.getElementById(id).classList.add('hidden'); document.getElementById(id).classList.remove('flex'); }
+        // =========================================================================
+        // 1. DỮ LIỆU ĐỊA LÝ KHU VỰC ĐH BÁCH KHOA ĐÀ NẴNG & 4 CỘT ĐO IOT
+        // =========================================================================
+        const EXHAUST_THRESHOLD_CM = 30; // 30cm: Ngưỡng ngập ống pô xe máy tay ga phổ thông
 
-        // Three.js Setup
-        const container = document.getElementById('canvas-container');
-        const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x0f172a);
+        const POLES_DATA = [
+            {
+                id: 'P01',
+                name: 'Đường Nguyễn Lương Bằng',
+                sub: 'Trước cổng ĐH Bách Khoa',
+                pos: { x: -5.2, y: 0.08, z: 2.0 },
+                sensitivity: 0.24, // Đường tương đối phẳng, thoát nước khá
+                currentCm: 0,
+                targetCurrentCm: 0,
+                pred30mCm: 0
+            },
+            {
+                id: 'P02',
+                name: 'Ngã ba Tôn Đức Thắng',
+                sub: 'Đoạn trũng giao đường vào trọ',
+                pos: { x: 2.2, y: -0.28, z: 2.3 },
+                sensitivity: 0.42, // Điểm trũng chính trên trục đường thẳng về trọ
+                currentCm: 0,
+                targetCurrentCm: 0,
+                pred30mCm: 0
+            },
+            {
+                id: 'P03',
+                name: 'Rốn ngập Kiệt Mẹ Suốt',
+                sub: 'Vùng trũng thấp nhất Hòa Khánh',
+                pos: { x: 2.4, y: -0.58, z: 6.8 },
+                sensitivity: 0.56, // Rất trũng, mưa to là ngập sâu nhất
+                currentCm: 0,
+                targetCurrentCm: 0,
+                pred30mCm: 0
+            },
+            {
+                id: 'P04',
+                name: 'Đường Ngô Sĩ Liên – Âu Cơ',
+                sub: 'Tuyến đồi cao (Đường vòng an toàn)',
+                pos: { x: 0.2, y: 0.72, z: -5.2 },
+                sensitivity: 0.04, // Nền đất cao gần đồi, không bao giờ ngập sâu
+                currentCm: 0,
+                targetCurrentCm: 0,
+                pred30mCm: 0
+            }
+        ];
 
-        const camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 1000);
-        camera.position.set(0, 18, 18);
-        camera.lookAt(0, 0, 0);
+        let rainfallMmH = 0;
+        let scenarioMode = 'dry'; // 'dry' | 'ai_early' | 'deep_flood' | 'slider'
+        let isDetourActive = false;
+        let showMapLabels = true;
+        let communityPinActive = false;
 
-        const renderer = new THREE.WebGLRenderer({ antialias: true });
-        renderer.setSize(container.clientWidth, container.clientHeight);
-        container.appendChild(renderer.domElement);
+        // Audio Web API (Tiếng mưa rào tự tổng hợp + âm báo nhẹ)
+        let audioEnabled = true;
+        let audioCtx = null;
+        let rainGainNode = null;
 
-        // Lights
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
-        scene.add(ambientLight);
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-        directionalLight.position.set(10, 20, 10);
-        scene.add(directionalLight);
+        // =========================================================================
+        // 2. WEB AUDIO API: TIẾNG MƯA RÀO THEO LƯỢNG MƯA & CÒI BÁO NHẸ
+        // =========================================================================
+        function initRainAudio() {
+            if (audioCtx) return;
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            if (!AudioCtx) return;
+            audioCtx = new AudioCtx();
 
-        // Ground / Sa bàn
-        const groundGeo = new THREE.PlaneGeometry(16, 12);
-        const groundMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.9 });
-        const ground = new THREE.Mesh(groundGeo, groundMat);
-        ground.rotation.x = -Math.PI / 2;
-        scene.add(ground);
+            // Tạo bộ đệm tiếng ồn trắng lọc qua Lowpass tạo tiếng mưa rơi tự nhiên
+            const bufferSize = audioCtx.sampleRate * 2;
+            const noiseBuffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+            const output = noiseBuffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) {
+                output[i] = Math.random() * 2 - 1;
+            }
 
-        // Water Plane (Mực nước ngập dâng lên theo lượng mưa)
-        const waterGeo = new THREE.PlaneGeometry(16, 12);
-        const waterMat = new THREE.MeshStandardMaterial({ color: 0x3b82f6, transparent: true, opacity: 0.2, roughness: 0.1 });
-        const waterPlane = new THREE.Mesh(waterGeo, waterMat);
-        waterPlane.rotation.x = -Math.PI / 2;
-        waterPlane.position.y = 0.05;
-        scene.add(waterPlane);
+            const whiteNoise = audioCtx.createBufferSource();
+            whiteNoise.buffer = noiseBuffer;
+            whiteNoise.loop = true;
 
-        // Đường đi
-        const roadMat = new THREE.MeshBasicMaterial({ color: 0x334155 });
-        const road1 = new THREE.Mesh(new THREE.BoxGeometry(14, 0.02, 1.2), roadMat);
-        road1.position.set(0, 0.01, -1);
-        scene.add(road1);
+            const filter = audioCtx.createBiquadFilter();
+            filter.type = 'bandpass';
+            filter.frequency.value = 950;
+            filter.Q.value = 0.65;
 
-        const road2 = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.02, 10), roadMat);
-        road2.position.set(-3, 0.01, 1);
-        scene.add(road2);
+            rainGainNode = audioCtx.createGain();
+            rainGainNode.gain.value = 0.0;
 
-        // Các xe máy mô phỏng
-        const bikes = [];
-        const bikeMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
-        for(let i=0; i<6; i++) {
-            const bike = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.3, 0.7), bikeMat);
-            bike.position.set(-6 + i*2.2, 0.18, -1);
-            scene.add(bike);
-            bikes.push(bike);
+            whiteNoise.connect(filter);
+            filter.connect(rainGainNode);
+            rainGainNode.connect(audioCtx.destination);
+            whiteNoise.start(0);
         }
 
-        // Animation Loop
-        let clock = new THREE.Clock();
-        function animate() {
-            requestAnimationFrame(animate);
-            bikes.forEach((bike) => {
-                bike.position.x += 0.03;
-                if(bike.position.x > 7) bike.position.x = -7;
+        function updateRainSoundVolume() {
+            if (!rainGainNode || !audioCtx) return;
+            if (!audioEnabled || rainfallMmH <= 2) {
+                rainGainNode.gain.setTargetAtTime(0.0, audioCtx.currentTime, 0.2);
+            } else {
+                const vol = Math.min(0.16, (rainfallMmH / 150) * 0.16);
+                rainGainNode.gain.setTargetAtTime(vol, audioCtx.currentTime, 0.25);
+            }
+        }
+
+        function playChime(type = 'info') {
+            if (!audioEnabled) return;
+            try {
+                initRainAudio();
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+                const now = audioCtx.currentTime;
+                const osc = audioCtx.createOscillator();
+                const g = audioCtx.createGain();
+                osc.connect(g);
+                g.connect(audioCtx.destination);
+
+                if (type === 'warn') {
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(580, now);
+                    osc.frequency.setValueAtTime(780, now + 0.12);
+                    g.gain.setValueAtTime(0.12, now);
+                    g.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+                    osc.start(now);
+                    osc.stop(now + 0.36);
+                } else if (type === 'ok') {
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(523, now);
+                    osc.frequency.setValueAtTime(659, now + 0.1);
+                    g.gain.setValueAtTime(0.09, now);
+                    g.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
+                    osc.start(now);
+                    osc.stop(now + 0.29);
+                }
+            } catch (e) {}
+        }
+
+        function toggleAudio() {
+            audioEnabled = !audioEnabled;
+            initRainAudio();
+            if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+            document.getElementById('audio-icon').textContent = audioEnabled ? '🔊' : '🔇';
+            document.getElementById('audio-label').textContent = audioEnabled ? 'Tiếng mưa: BẬT' : 'Tiếng mưa: TẮT';
+            updateRainSoundVolume();
+            if (audioEnabled) playChime('ok');
+        }
+
+        // =========================================================================
+        // 3. KHỞI TẠO SA BÀN 3D KHU VỰC ĐH BÁCH KHOA - HÒA KHÁNH (THREE.JS)
+        // =========================================================================
+        let scene, camera, renderer, controls;
+        let rainPoints, rainVelocities;
+        let floodWaterMeshLow, floodWaterMeshMain;
+        let directRouteArrows = [], detourRouteArrows = [];
+        let directRouteLineMat, detourRouteLineMat;
+        let hazardZoneRing1, hazardZoneRing2;
+        let communityPinMesh;
+        let cameraLerpPos = null, targetLerpPos = null;
+
+        const directCurvePoints = [
+            new THREE.Vector3(-10.5, 0.22, 1.5),
+            new THREE.Vector3(-5.2,  0.18, 2.0),
+            new THREE.Vector3(2.2,  -0.12, 2.3),
+            new THREE.Vector3(7.0,   0.14, 1.9),
+            new THREE.Vector3(10.6,  0.22, 1.5)
+        ];
+        const detourCurvePoints = [
+            new THREE.Vector3(-10.5, 0.22, 1.5),
+            new THREE.Vector3(-8.2,  0.52, -2.5),
+            new THREE.Vector3(-4.2,  0.84, -4.9),
+            new THREE.Vector3(0.5,   0.88, -5.2),
+            new THREE.Vector3(5.4,   0.82, -4.6),
+            new THREE.Vector3(8.5,   0.48, -1.8),
+            new THREE.Vector3(10.6,  0.22, 1.5)
+        ];
+        let directCurve, detourCurve;
+        const studentScooters = [];
+        const labelAnchors = [];
+
+        function initThreeWorld() {
+            const container = document.getElementById('canvas-container');
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x060d1a);
+            scene.fog = new THREE.FogExp2(0x060d1a, 0.016);
+
+            camera = new THREE.PerspectiveCamera(44, container.clientWidth / container.clientHeight, 0.1, 150);
+            camera.position.set(0.5, 16.5, 19.5);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            container.appendChild(renderer.domElement);
+
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.06;
+            controls.maxPolarAngle = Math.PI / 2 - 0.06;
+            controls.minDistance = 6;
+            controls.maxDistance = 36;
+            controls.target.set(0, 0.2, 1.0);
+
+            renderer.domElement.addEventListener('pointerdown', () => {
+                cameraLerpPos = null;
+                targetLerpPos = null;
             });
-            renderer.render(scene, camera);
-        }
-        animate();
 
-        // Window resize
-        window.addEventListener('resize', () => {
+            // Ánh sáng sa bàn đô thị hiện đại
+            scene.add(new THREE.AmbientLight(0x94a3b8, 0.65));
+            const hemi = new THREE.HemisphereLight(0xbae6fd, 0x0f172a, 0.55);
+            scene.add(hemi);
+
+            const sunLight = new THREE.DirectionalLight(0xf8fafc, 0.85);
+            sunLight.position.set(12, 22, 14);
+            sunLight.castShadow = true;
+            sunLight.shadow.mapSize.width = 1024;
+            sunLight.shadow.mapSize.height = 1024;
+            scene.add(sunLight);
+
+            // 1. Địa hình phân tầng cao - trũng rõ rệt
+            buildTerrainAndRoads();
+
+            // 2. Trường ĐH Bách Khoa Đà Nẵng, Khu trọ Hòa Khánh, Khu dân cư Mẹ Suốt & Cây xanh
+            buildCampusAndNeighborhoods();
+
+            // 3. 4 Cột đo ngập IoT thông minh có thước vạch & đèn LED đỉnh cột
+            buildSmartIoTPoles();
+
+            // 4. Vệt sáng dẫn đường 3D (Đường thẳng 6 phút vs Đường vòng né ngập 11 phút)
+            buildRouteRibbons();
+
+            // 5. Mặt nước ngập 3D bán trong suốt tại vùng trũng
+            buildDynamicFloodWater();
+
+            // 6. Đàn xe máy sinh viên chạy liên tục trên đường
+            buildStudentMotorbikes();
+
+            // 7. Hệ thống hạt mưa 3D trên bầu trời
+            buildRainSystem();
+
+            // 8. Ghim 3D Báo ngập cộng đồng (ẩn mặc định cho tới khi chạy Demo 4)
+            buildCommunityPin();
+
+            // 9. Tạo nhãn nổi HTML gắn theo tọa độ 3D
+            setupFloatingLabels();
+
+            window.addEventListener('resize', onResize);
+        }
+
+        function buildTerrainAndRoads() {
+            // Đế sa bàn tổng thể
+            const baseBoard = new THREE.Mesh(
+                new THREE.BoxGeometry(31, 1.2, 21),
+                new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.85 })
+            );
+            baseBoard.position.set(0, -0.95, 0.8);
+            baseBoard.receiveShadow = true;
+            scene.add(baseBoard);
+
+            // Nền đất chung
+            const ground = new THREE.Mesh(
+                new THREE.PlaneGeometry(30.6, 20.6),
+                new THREE.MeshStandardMaterial({ color: 0x132035, roughness: 0.9 })
+            );
+            ground.rotation.x = -Math.PI / 2;
+            ground.position.set(0, -0.34, 0.8);
+            ground.receiveShadow = true;
+            scene.add(ground);
+
+            // Vùng Đồi Cao Phía Bắc (Tuyến Ngô Sĩ Liên - Âu Cơ không bao giờ ngập)
+            const highGround = new THREE.Mesh(
+                new THREE.BoxGeometry(24, 1.05, 6.2),
+                new THREE.MeshStandardMaterial({ color: 0x1a2e44, roughness: 0.82 })
+            );
+            highGround.position.set(0, 0.18, -5.0);
+            highGround.receiveShadow = true;
+            scene.add(highGround);
+
+            // Hai đầu cao ráo (ĐH Bách Khoa bên trái & Khu trọ Hòa Khánh bên phải)
+            const westPlateau = new THREE.Mesh(
+                new THREE.BoxGeometry(7.2, 0.5, 11),
+                new THREE.MeshStandardMaterial({ color: 0x17253b, roughness: 0.85 })
+            );
+            westPlateau.position.set(-11.4, -0.15, 1.2);
+            scene.add(westPlateau);
+
+            const eastPlateau = new THREE.Mesh(
+                new THREE.BoxGeometry(7.2, 0.5, 11),
+                new THREE.MeshStandardMaterial({ color: 0x17253b, roughness: 0.85 })
+            );
+            eastPlateau.position.set(11.4, -0.15, 1.2);
+            scene.add(eastPlateau);
+
+            // Lòng chảo Rốn ngập Mẹ Suốt (Phía Nam - Thấp trũng rõ rệt)
+            const lowBasin = new THREE.Mesh(
+                new THREE.BoxGeometry(11.5, 0.2, 6.5),
+                new THREE.MeshStandardMaterial({ color: 0x0b1526, roughness: 0.9 })
+            );
+            lowBasin.position.set(2.2, -0.68, 6.6);
+            scene.add(lowBasin);
+
+            // Vẽ mặt đường nhựa cho Đường chính, Đường nhánh Mẹ Suốt và Đường vòng đồi cao
+            directCurve = new THREE.CatmullRomCurve3(directCurvePoints);
+            detourCurve = new THREE.CatmullRomCurve3(detourCurvePoints);
+
+            const roadMat = new THREE.MeshStandardMaterial({ color: 0x263244, roughness: 0.75 });
+            const mainRoadGeo = new THREE.TubeGeometry(directCurve, 64, 0.72, 8, false);
+            const mainRoad = new THREE.Mesh(mainRoadGeo, roadMat);
+            mainRoad.scale.set(1, 0.08, 1);
+            mainRoad.position.y = -0.02;
+            scene.add(mainRoad);
+
+            const highRoadGeo = new THREE.TubeGeometry(detourCurve, 64, 0.65, 8, false);
+            const highRoad = new THREE.Mesh(highRoadGeo, roadMat);
+            highRoad.scale.set(1, 0.08, 1);
+            highRoad.position.y = -0.02;
+            scene.add(highRoad);
+
+            // Đường Kiệt Mẹ Suốt nối từ Ngã ba Tôn Đức Thắng đi xuống vùng trũng phía Nam
+            const meSuotCurve = new THREE.CatmullRomCurve3([
+                new THREE.Vector3(2.2, -0.22, 2.3),
+                new THREE.Vector3(2.3, -0.45, 4.6),
+                new THREE.Vector3(2.4, -0.56, 8.2)
+            ]);
+            const meSuotRoad = new THREE.Mesh(new THREE.TubeGeometry(meSuotCurve, 24, 0.56, 8, false), roadMat);
+            meSuotRoad.scale.set(1, 0.08, 1);
+            scene.add(meSuotRoad);
+        }
+
+        function buildCampusAndNeighborhoods() {
+            // 1. Khuôn viên ĐH Bách Khoa Đà Nẵng (Bên trái: x ~ -12)
+            const dutGroup = new THREE.Group();
+            dutGroup.position.set(-12.2, 0.1, 1.5);
+
+            // Tòa nhà Khu A / Smart Building Bách Khoa
+            const mainBlock = new THREE.Mesh(
+                new THREE.BoxGeometry(2.6, 2.5, 4.4),
+                new THREE.MeshStandardMaterial({ color: 0x2563eb, roughness: 0.35, metalness: 0.25 })
+            );
+            mainBlock.position.set(-0.6, 1.25, 0);
+            mainBlock.castShadow = true;
+            dutGroup.add(mainBlock);
+
+            // Các dải cửa sổ kính sáng đèn
+            for (let row = 0; row < 3; row++) {
+                const winStrip = new THREE.Mesh(
+                    new THREE.BoxGeometry(2.66, 0.22, 3.8),
+                    new THREE.MeshBasicMaterial({ color: 0xbae6fd })
+                );
+                winStrip.position.set(-0.6, 0.65 + row * 0.7, 0);
+                dutGroup.add(winStrip);
+            }
+
+            // Cổng chào ĐH Bách Khoa hướng ra Nguyễn Lương Bằng
+            const gateLeft = new THREE.Mesh(new THREE.BoxGeometry(0.25, 1.5, 0.25), new THREE.MeshStandardMaterial({ color: 0xf8fafc }));
+            gateLeft.position.set(1.3, 0.75, -0.9);
+            const gateRight = gateLeft.clone();
+            gateRight.position.set(1.3, 0.75, 0.9);
+            const gateTop = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.32, 2.3), new THREE.MeshStandardMaterial({ color: 0x0284c7 }));
+            gateTop.position.set(1.3, 1.55, 0);
+            dutGroup.add(gateLeft, gateRight, gateTop);
+
+            scene.add(dutGroup);
+
+            // 2. Khu trọ Sinh viên Hòa Khánh (Đích đến bên phải: x ~ +12)
+            const dormGroup = new THREE.Group();
+            dormGroup.position.set(12.0, 0.1, 1.5);
+
+            const dormColors = [0x10b981, 0x38bdf8, 0xf59e0b];
+            [-1.5, 0.1, 1.7].forEach((zOff, i) => {
+                const house = new THREE.Mesh(
+                    new THREE.BoxGeometry(2.1, 1.5 + (i % 2) * 0.5, 1.25),
+                    new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.6 })
+                );
+                house.position.set(0.3, (1.5 + (i % 2) * 0.5) / 2, zOff);
+                house.castShadow = true;
+                dormGroup.add(house);
+
+                const roof = new THREE.Mesh(
+                    new THREE.BoxGeometry(2.2, 0.18, 1.35),
+                    new THREE.MeshStandardMaterial({ color: dormColors[i] })
+                );
+                roof.position.set(0.3, 1.5 + (i % 2) * 0.5 + 0.09, zOff);
+                dormGroup.add(roof);
+            });
+            scene.add(dormGroup);
+
+            // 3. Các dãy nhà trọ cấp 4 thấp ven Rốn ngập Mẹ Suốt (x ~ 0..5, z ~ 5.5..8.5)
+            const lowHousePositions = [
+                [0.4, 5.8], [0.4, 7.5], [4.3, 5.8], [4.3, 7.5], [-1.2, 6.8], [5.9, 6.7]
+            ];
+            lowHousePositions.forEach(([hx, hz], idx) => {
+                const h = new THREE.Group();
+                h.position.set(hx, -0.58, hz);
+                const walls = new THREE.Mesh(
+                    new THREE.BoxGeometry(1.3, 0.95, 1.15),
+                    new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.75 })
+                );
+                walls.position.y = 0.475;
+                const roof = new THREE.Mesh(
+                    new THREE.ConeGeometry(1.02, 0.48, 4),
+                    new THREE.MeshStandardMaterial({ color: idx % 2 === 0 ? 0xb91c1c : 0x0369a1, roughness: 0.6 })
+                );
+                roof.rotation.y = Math.PI / 4;
+                roof.position.y = 1.18;
+                h.add(walls, roof);
+                scene.add(h);
+            });
+
+            // 4. Các tòa nhà khang trang dọc tuyến đường cao Ngô Sĩ Liên - Âu Cơ
+            [-6.0, -2.2, 2.8, 6.2].forEach((bx, idx) => {
+                const b = new THREE.Mesh(
+                    new THREE.BoxGeometry(1.6, 1.4 + (idx % 2) * 0.6, 1.3),
+                    new THREE.MeshStandardMaterial({ color: 0x3b4c66, roughness: 0.6 })
+                );
+                b.position.set(bx, 0.7 + (1.4 + (idx % 2) * 0.6) / 2, -6.9);
+                b.castShadow = true;
+                scene.add(b);
+            });
+
+            // 5. Cây xanh đô thị điểm xuyết
+            const treeCoords = [
+                [-7.5, 0.1, 3.2], [-3.0, 0.0, 3.3], [6.2, 0.05, 3.2],
+                [-5.0, 0.7, -3.5], [1.8, 0.7, -3.7], [5.2, 0.7, -3.4]
+            ];
+            treeCoords.forEach(([tx, ty, tz]) => {
+                const tree = new THREE.Group();
+                tree.position.set(tx, ty, tz);
+                const trunk = new THREE.Mesh(
+                    new THREE.CylinderGeometry(0.08, 0.11, 0.55, 7),
+                    new THREE.MeshStandardMaterial({ color: 0x78350f })
+                );
+                trunk.position.y = 0.27;
+                const crown = new THREE.Mesh(
+                    new THREE.SphereGeometry(0.42, 10, 10),
+                    new THREE.MeshStandardMaterial({ color: 0x15803d, roughness: 0.8 })
+                );
+                crown.position.y = 0.78;
+                tree.add(trunk, crown);
+                scene.add(tree);
+            });
+        }
+
+        function buildSmartIoTPoles() {
+            POLES_DATA.forEach(pole => {
+                const g = new THREE.Group();
+                g.position.set(pole.pos.x, pole.pos.y, pole.pos.z);
+
+                // Thân cột sơn vạch trắng - đỏ kiểu cột thủy chí đo ngập thực tế ở Đà Nẵng
+                const sections = 6;
+                for (let s = 0; s < sections; s++) {
+                    const seg = new THREE.Mesh(
+                        new THREE.CylinderGeometry(0.09, 0.09, 0.32, 12),
+                        new THREE.MeshStandardMaterial({ color: s % 2 === 0 ? 0xf8fafc : 0xef4444, roughness: 0.4 })
+                    );
+                    seg.position.y = 0.16 + s * 0.32;
+                    g.add(seg);
+                }
+
+                // Tấm pin năng lượng mặt trời nhỏ + Hộp cảm biến siêu âm hướng xuống mặt nước
+                const box = new THREE.Mesh(
+                    new THREE.BoxGeometry(0.42, 0.22, 0.28),
+                    new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.5 })
+                );
+                box.position.set(0.12, 2.05, 0);
+                g.add(box);
+
+                const solar = new THREE.Mesh(
+                    new THREE.BoxGeometry(0.52, 0.05, 0.42),
+                    new THREE.MeshStandardMaterial({ color: 0x1d4ed8, metalness: 0.7, roughness: 0.2 })
+                );
+                solar.position.set(0.1, 2.32, 0);
+                solar.rotation.z = -0.25;
+                g.add(solar);
+
+                // Vòng đèn LED phát sáng trên đỉnh cột (Xanh / Vàng / Đỏ)
+                const ledMat = new THREE.MeshBasicMaterial({ color: 0x10b981 });
+                const ledBeacon = new THREE.Mesh(new THREE.SphereGeometry(0.2, 16, 16), ledMat);
+                ledBeacon.position.set(0, 2.52, 0);
+                g.add(ledBeacon);
+
+                const ptLight = new THREE.PointLight(0x10b981, 0.9, 5.0);
+                ptLight.position.set(0, 2.55, 0);
+                g.add(ptLight);
+
+                pole.ledMat = ledMat;
+                pole.ptLight = ptLight;
+                scene.add(g);
+            });
+        }
+
+        function buildRouteRibbons() {
+            // Vệt sáng Lộ trình thẳng (Xanh ngọc)
+            directRouteLineMat = new THREE.MeshBasicMaterial({
+                color: 0x06b6d4,
+                transparent: true,
+                opacity: 0.85
+            });
+            const directRibbon = new THREE.Mesh(
+                new THREE.TubeGeometry(directCurve, 64, 0.14, 8, false),
+                directRouteLineMat
+            );
+            directRibbon.position.y = 0.14;
+            scene.add(directRibbon);
+
+            // Vệt sáng Lộ trình vòng né ngập (Xanh lá sáng rực khi kích hoạt)
+            detourRouteLineMat = new THREE.MeshBasicMaterial({
+                color: 0x10b981,
+                transparent: true,
+                opacity: 0.12
+            });
+            const detourRibbon = new THREE.Mesh(
+                new THREE.TubeGeometry(detourCurve, 64, 0.15, 8, false),
+                detourRouteLineMat
+            );
+            detourRibbon.position.y = 0.15;
+            scene.add(detourRibbon);
+
+            // Các nón mũi tên phát sáng chạy đuổi dọc đường chỉ hướng đi
+            const coneGeo = new THREE.ConeGeometry(0.22, 0.48, 8);
+            coneGeo.rotateX(Math.PI / 2);
+
+            for (let i = 0; i < 10; i++) {
+                const mat = new THREE.MeshBasicMaterial({ color: 0x67e8f9, transparent: true, opacity: 0.95 });
+                const mesh = new THREE.Mesh(coneGeo, mat);
+                scene.add(mesh);
+                directRouteArrows.push({ mesh, mat, t: i / 10 });
+            }
+
+            for (let i = 0; i < 12; i++) {
+                const mat = new THREE.MeshBasicMaterial({ color: 0x34d399, transparent: true, opacity: 0.0 });
+                const mesh = new THREE.Mesh(coneGeo, mat);
+                scene.add(mesh);
+                detourRouteArrows.push({ mesh, mat, t: i / 12 });
+            }
+
+            // Vòng cảnh báo đỏ dưới mặt đường tại Ngã ba Tôn Đức Thắng & Mẹ Suốt khi ngập/sắp ngập
+            const ringGeo = new THREE.RingGeometry(1.3, 1.65, 32);
+            const ringMat = new THREE.MeshBasicMaterial({
+                color: 0xf43f5e,
+                side: THREE.DoubleSide,
+                transparent: true,
+                opacity: 0.0
+            });
+            hazardZoneRing1 = new THREE.Mesh(ringGeo, ringMat);
+            hazardZoneRing1.rotation.x = -Math.PI / 2;
+            hazardZoneRing1.position.set(2.2, 0.15, 2.3);
+            scene.add(hazardZoneRing1);
+
+            hazardZoneRing2 = new THREE.Mesh(new THREE.RingGeometry(1.8, 2.2, 32), ringMat.clone());
+            hazardZoneRing2.rotation.x = -Math.PI / 2;
+            hazardZoneRing2.position.set(2.4, 0.05, 6.8);
+            scene.add(hazardZoneRing2);
+        }
+
+        function buildDynamicFloodWater() {
+            // Mặt nước dâng vùng trũng Mẹ Suốt
+            const waterMatLow = new THREE.MeshStandardMaterial({
+                color: 0x0284c7,
+                roughness: 0.18,
+                metalness: 0.35,
+                transparent: true,
+                opacity: 0.72
+            });
+            floodWaterMeshLow = new THREE.Mesh(new THREE.PlaneGeometry(12.2, 7.2, 16, 16), waterMatLow);
+            floodWaterMeshLow.rotation.x = -Math.PI / 2;
+            floodWaterMeshLow.position.set(2.3, -0.75, 6.5);
+            floodWaterMeshLow.visible = false;
+            scene.add(floodWaterMeshLow);
+
+            // Mặt nước dâng tại đoạn trũng Ngã ba Tôn Đức Thắng - Nguyễn Lương Bằng
+            const waterMatMain = new THREE.MeshStandardMaterial({
+                color: 0x0ea5e9,
+                roughness: 0.2,
+                metalness: 0.3,
+                transparent: true,
+                opacity: 0.68
+            });
+            floodWaterMeshMain = new THREE.Mesh(new THREE.PlaneGeometry(13.5, 4.4, 16, 16), waterMatMain);
+            floodWaterMeshMain.rotation.x = -Math.PI / 2;
+            floodWaterMeshMain.position.set(0.5, -0.5, 2.2);
+            floodWaterMeshMain.visible = false;
+            scene.add(floodWaterMeshMain);
+        }
+
+        function buildStudentMotorbikes() {
+            const bikeColors = [0x38bdf8, 0xfbbf24, 0xf43f5e, 0xa855f7, 0x22c55e, 0xf97316];
+            for (let i = 0; i < 6; i++) {
+                const bike = new THREE.Group();
+
+                // Thân xe máy mini
+                const body = new THREE.Mesh(
+                    new THREE.BoxGeometry(0.24, 0.24, 0.56),
+                    new THREE.MeshStandardMaterial({ color: bikeColors[i % bikeColors.length], roughness: 0.3 })
+                );
+                body.position.y = 0.2;
+                bike.add(body);
+
+                // Sinh viên ngồi lái đội mũ bảo hiểm trắng/xanh
+                const riderTorso = new THREE.Mesh(
+                    new THREE.BoxGeometry(0.2, 0.26, 0.2),
+                    new THREE.MeshStandardMaterial({ color: 0x1e293b })
+                );
+                riderTorso.position.set(0, 0.42, -0.04);
+                bike.add(riderTorso);
+
+                const helmet = new THREE.Mesh(
+                    new THREE.SphereGeometry(0.12, 10, 10),
+                    new THREE.MeshStandardMaterial({ color: 0xf8fafc })
+                );
+                helmet.position.set(0, 0.63, -0.04);
+                bike.add(helmet);
+
+                // Đèn pha nhỏ phía trước
+                const headLight = new THREE.Mesh(
+                    new THREE.SphereGeometry(0.055, 8, 8),
+                    new THREE.MeshBasicMaterial({ color: 0xfef08a })
+                );
+                headLight.position.set(0, 0.28, 0.29);
+                bike.add(headLight);
+
+                scene.add(bike);
+                studentScooters.push({
+                    mesh: bike,
+                    progress: i / 6,
+                    speed: 0.085 + (i % 3) * 0.012
+                });
+            }
+        }
+
+        function buildRainSystem() {
+            const dropCount = 1600;
+            const positions = new Float32Array(dropCount * 3);
+            rainVelocities = new Float32Array(dropCount);
+
+            for (let i = 0; i < dropCount; i++) {
+                positions[i * 3] = (Math.random() - 0.5) * 32;
+                positions[i * 3 + 1] = Math.random() * 18;
+                positions[i * 3 + 2] = (Math.random() - 0.5) * 22;
+                rainVelocities[i] = 14 + Math.random() * 8;
+            }
+
+            const geo = new THREE.BufferGeometry();
+            geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+            const mat = new THREE.PointsMaterial({
+                color: 0xbae6fd,
+                size: 0.14,
+                transparent: true,
+                opacity: 0.0
+            });
+
+            rainPoints = new THREE.Points(geo, mat);
+            scene.add(rainPoints);
+        }
+
+        function buildCommunityPin() {
+            communityPinMesh = new THREE.Group();
+            communityPinMesh.position.set(0.8, 0.4, 6.2);
+
+            const cone = new THREE.Mesh(
+                new THREE.ConeGeometry(0.32, 0.85, 16),
+                new THREE.MeshBasicMaterial({ color: 0xf43f5e })
+            );
+            cone.rotation.x = Math.PI;
+            cone.position.y = 0.45;
+
+            const head = new THREE.Mesh(
+                new THREE.SphereGeometry(0.34, 16, 16),
+                new THREE.MeshBasicMaterial({ color: 0xfb7185 })
+            );
+            head.position.y = 0.92;
+
+            communityPinMesh.add(cone, head);
+            communityPinMesh.visible = false;
+            scene.add(communityPinMesh);
+        }
+
+        function setupFloatingLabels() {
+            const definitions = [
+                { text: '🎓 ĐH Bách Khoa ĐN (Xuất phát)', pos: new THREE.Vector3(-12.2, 2.9, 1.5), cls: 'bg-blue-600/90 border-blue-300 text-white font-bold' },
+                { text: '🏠 Khu trọ Hòa Khánh (Đích đến)', pos: new THREE.Vector3(12.0, 2.5, 1.5), cls: 'bg-emerald-600/90 border-emerald-300 text-white font-bold' },
+                { text: '📡 P01: Nguyễn Lương Bằng', pos: new THREE.Vector3(-5.2, 2.9, 2.0), cls: 'bg-slate-900/90 border-sky-400/60 text-sky-200' },
+                { text: '⚠️ P02: Ngã ba Tôn Đức Thắng (Trũng)', pos: new THREE.Vector3(2.2, 2.6, 2.3), cls: 'bg-slate-900/90 border-amber-400/70 text-amber-200' },
+                { text: '🌊 P03: Rốn ngập Mẹ Suốt (Rất trũng)', pos: new THREE.Vector3(2.4, 2.3, 6.8), cls: 'bg-rose-950/90 border-rose-400/70 text-rose-200 font-semibold' },
+                { text: '🛵 P04: Đường cao Ngô Sĩ Liên – Âu Cơ (An toàn)', pos: new THREE.Vector3(0.2, 3.5, -5.2), cls: 'bg-emerald-950/90 border-emerald-400/70 text-emerald-200 font-semibold' }
+            ];
+
+            const container = document.getElementById('labels-container');
+            container.innerHTML = '';
+
+            definitions.forEach(def => {
+                const el = document.createElement('div');
+                el.className = `map-label px-2.5 py-1 rounded-lg border text-[11px] shadow-lg ${def.cls}`;
+                el.textContent = def.text;
+                container.appendChild(el);
+                labelAnchors.push({ el, pos: def.pos });
+            });
+        }
+
+        function updateFloatingLabels() {
+            const container = document.getElementById('labels-container');
+            if (!showMapLabels) {
+                container.style.display = 'none';
+                return;
+            }
+            container.style.display = 'block';
+
+            const w = window.innerWidth;
+            const h = window.innerHeight;
+
+            labelAnchors.forEach(item => {
+                const v = item.pos.clone().project(camera);
+                if (v.z > 1) {
+                    item.el.style.opacity = '0';
+                } else {
+                    const x = (v.x * 0.5 + 0.5) * w;
+                    const y = (-v.y * 0.5 + 0.5) * h;
+                    item.el.style.left = `${x}px`;
+                    item.el.style.top = `${y}px`;
+                    item.el.style.opacity = '1';
+                }
+            });
+        }
+
+        function toggleLabels() {
+            showMapLabels = !showMapLabels;
+            document.querySelector('#btn-labels span:last-child').textContent = showMapLabels ? 'Nhãn bản đồ: BẬT' : 'Nhãn bản đồ: TẮT';
+        }
+
+        // =========================================================================
+        // 4. LOGIC MÔ PHỎNG MƯA, DỰ BÁO AI +30 PHÚT & TỰ ĐỘNG ĐỔI ĐƯỜNG 3D
+        // =========================================================================
+        function showToast(icon, title, desc, borderCls = 'border-sky-400/60') {
+            const banner = document.getElementById('toast-banner');
+            const inner = document.getElementById('toast-inner');
+            document.getElementById('toast-icon').textContent = icon;
+            document.getElementById('toast-title').textContent = title;
+            document.getElementById('toast-desc').textContent = desc;
+            inner.className = `glass-card px-4 py-3 rounded-2xl flex items-center gap-3 shadow-2xl border ${borderCls}`;
+
+            banner.classList.remove('opacity-0', '-translate-y-3');
+            banner.classList.add('opacity-100', 'translate-y-0');
+        }
+
+        function onRainSliderInput(val) {
+            scenarioMode = 'slider';
+            rainfallMmH = parseInt(val, 10);
+            initRainAudio();
+            if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+            recalculateWaterAndForecast();
+        }
+
+        function recalculateWaterAndForecast() {
+            document.getElementById('rain-slider').value = rainfallMmH;
+            document.getElementById('rain-badge').textContent = `${rainfallMmH} mm/h`;
+            updateRainSoundVolume();
+
+            const weatherDesc = document.getElementById('weather-desc');
+            if (rainfallMmH === 0) {
+                weatherDesc.innerHTML = '☀️ <strong>Trời quang mây tạnh:</strong> Các tuyến đường quanh ĐH Bách Khoa khô ráo hoàn toàn.';
+            } else if (rainfallMmH < 50) {
+                weatherDesc.innerHTML = '🌦️ <strong>Mưa nhỏ / Mưa vừa:</strong> Nước thoát kịp qua cống, xe máy sinh viên vẫn đi thẳng bình thường.';
+            } else if (rainfallMmH < 95) {
+                weatherDesc.innerHTML = '🌧️ <strong>Mưa to nặng hạt:</strong> Nước bắt đầu ứ đọng ở vùng trũng Mẹ Suốt và Ngã ba Tôn Đức Thắng.';
+            } else {
+                weatherDesc.innerHTML = '⛈️ <strong>Mưa xối xả cực lớn:</strong> Nước từ đồi dồn nhanh xuống vùng trũng Hòa Khánh — nguy cơ ngập lút ống pô!';
+            }
+
+            // Tính mực nước hiện tại & mực nước AI dự báo sau 30 phút dựa theo kịch bản
+            POLES_DATA.forEach(p => {
+                if (scenarioMode === 'dry') {
+                    p.targetCurrentCm = 0;
+                    p.pred30mCm = 0;
+                } else if (scenarioMode === 'ai_early') {
+                    // ĐIỂM ĂN TIỀN CỦA AI: Hiện tại mới chớm ngập 8-18cm (chưa tới 30cm!), NHƯNG AI dự báo 30p nữa vọt lên 42-56cm!
+                    if (p.id === 'P01') { p.targetCurrentCm = 6;  p.pred30mCm = 22; }
+                    if (p.id === 'P02') { p.targetCurrentCm = 12; p.pred30mCm = 42; } // Vượt 30cm sau 30p!
+                    if (p.id === 'P03') { p.targetCurrentCm = 18; p.pred30mCm = 56; } // Vượt 30cm sau 30p!
+                    if (p.id === 'P04') { p.targetCurrentCm = 2;  p.pred30mCm = 4;  }
+                } else if (scenarioMode === 'deep_flood') {
+                    // Ngập sâu thực tế diện rộng
+                    if (p.id === 'P01') { p.targetCurrentCm = 24; p.pred30mCm = 28; }
+                    if (p.id === 'P02') { p.targetCurrentCm = 39; p.pred30mCm = 45; }
+                    if (p.id === 'P03') { p.targetCurrentCm = 56; p.pred30mCm = 62; }
+                    if (p.id === 'P04') { p.targetCurrentCm = 3;  p.pred30mCm = 4;  }
+                } else {
+                    // Kéo thanh trượt tự do
+                    p.targetCurrentCm = Math.round(rainfallMmH * p.sensitivity * 0.58);
+                    p.pred30mCm = Math.round(rainfallMmH * p.sensitivity * 0.96);
+                }
+            });
+
+            // Quyết định đổi đường: Hễ Ngã ba Tôn Đức Thắng (P02) HIỆN TẠI >= 28cm HOẶC AI DỰ BÁO +30p >= 30cm -> Chuyển sang đường vòng!
+            const p02 = POLES_DATA[1];
+            const prevDetour = isDetourActive;
+            isDetourActive = (p02.targetCurrentCm >= 28 || p02.pred30mCm >= EXHAUST_THRESHOLD_CM);
+
+            if (isDetourActive !== prevDetour) {
+                playChime(isDetourActive ? 'warn' : 'ok');
+            }
+
+            updateRouteAndPolesUI();
+        }
+
+        // 4 KỊCH BẢN DEMO 1-CHẠM CHO BUỔI THUYẾT TRÌNH
+        function runScenarioDry() {
+            scenarioMode = 'dry';
+            rainfallMmH = 0;
+            initRainAudio();
+            recalculateWaterAndForecast();
+            setCameraView('overview');
+            showToast(
+                '☀️',
+                'KỊCH BẢN 1: TRỜI TẠNH RÁO — LỘ TRÌNH NGẮN NHẤT (6 PHÚT)',
+                'Mực nước 0 cm. Xe máy sinh viên đi thẳng qua đường Nguyễn Lương Bằng ➔ Tôn Đức Thắng về khu trọ.',
+                'border-emerald-400/60'
+            );
+        }
+
+        function runScenarioAIEarlyWarning() {
+            scenarioMode = 'ai_early';
+            rainfallMmH = 110;
+            initRainAudio();
+            if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+            recalculateWaterAndForecast();
+            setCameraView('overview');
+            showToast(
+                '⛈️',
+                'AI CẢNH BÁO SỚM TRƯỚC 30 PHÚT — ĐỔI SANG ĐƯỜNG VÒNG AN TOÀN!',
+                'Hiện tại Ngã ba Tôn Đức Thắng mới ngập 12 cm (mắt thường tưởng đi được), nhưng AI dự báo 30p nữa sẽ dâng lên 42 cm (lút ống pô 30 cm)!',
+                'border-amber-400/80 danger-pulse'
+            );
+        }
+
+        function runScenarioDeepFlood() {
+            scenarioMode = 'deep_flood';
+            rainfallMmH = 135;
+            initRainAudio();
+            if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+            recalculateWaterAndForecast();
+            setCameraView('mesuot');
+            showToast(
+                '🌊',
+                'NGẬP SÂU DIỆN RỘNG: MẸ SUỐT (56 CM) & TÔN ĐỨC THẮNG (39 CM)!',
+                'Các cột đo IoT chuyển đèn ĐỎ nhấp nháy tại chỗ. Toàn bộ xe sinh viên được dẫn vòng lên đường cao Ngô Sĩ Liên – Âu Cơ.',
+                'border-rose-500/80 danger-pulse'
+            );
+        }
+
+        function setCameraView(view) {
+            if (view === 'overview') {
+                cameraLerpPos = new THREE.Vector3(0.5, 16.5, 19.5);
+                targetLerpPos = new THREE.Vector3(0, 0.2, 1.0);
+            } else if (view === 'mesuot') {
+                cameraLerpPos = new THREE.Vector3(6.8, 7.2, 13.8);
+                targetLerpPos = new THREE.Vector3(2.2, -0.2, 4.8);
+            } else if (view === 'detour') {
+                cameraLerpPos = new THREE.Vector3(0.5, 9.5, 4.8);
+                targetLerpPos = new THREE.Vector3(0.2, 0.7, -5.0);
+            }
+        }
+
+        // =========================================================================
+        // 5. CẬP NHẬT BẢNG 4 CỘT IOT & THẺ GIẢI THÍCH LỘ TRÌNH
+        // =========================================================================
+        function getLevelBadgeClass(cm) {
+            if (cm >= EXHAUST_THRESHOLD_CM) return 'text-rose-400 bg-rose-500/20 border-rose-400/50';
+            if (cm >= 15) return 'text-amber-300 bg-amber-500/20 border-amber-400/50';
+            return 'text-emerald-300 bg-emerald-500/15 border-emerald-400/35';
+        }
+
+        function updateRouteAndPolesUI() {
+            const listEl = document.getElementById('poles-list');
+            listEl.innerHTML = POLES_DATA.map(p => {
+                const curDisp = Math.round(p.targetCurrentCm);
+                const predDisp = Math.round(p.pred30mCm);
+                const curCls = getLevelBadgeClass(curDisp);
+                const predCls = getLevelBadgeClass(predDisp);
+
+                let statusDot = 'bg-emerald-400';
+                if (curDisp >= 30) statusDot = 'bg-rose-500 animate-ping';
+                else if (curDisp >= 15 || predDisp >= 30) statusDot = 'bg-amber-400 animate-pulse';
+
+                return `
+                    <div class="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800 flex items-center justify-between gap-2">
+                        <div class="min-w-0">
+                            <div class="flex items-center gap-1.5">
+                                <span class="w-2 h-2 rounded-full ${statusDot}"></span>
+                                <span class="font-mono-num text-[11px] font-bold text-sky-400">${p.id}</span>
+                                <span class="text-xs font-semibold text-white truncate">${p.name}</span>
+                            </div>
+                            <div class="text-[10px] text-slate-400 truncate mt-0.5">${p.sub}</div>
+                        </div>
+
+                        <div class="flex items-center gap-1.5 shrink-0">
+                            <div class="text-center px-2 py-1 rounded-lg border ${curCls} min-w-[68px]">
+                                <div class="text-[9px] uppercase opacity-80">Hiện tại</div>
+                                <div class="font-mono-num text-xs font-extrabold">${curDisp} cm</div>
+                            </div>
+                            <div class="text-center px-2 py-1 rounded-lg border ${predCls} min-w-[78px]">
+                                <div class="text-[9px] uppercase opacity-85">AI +30 phút</div>
+                                <div class="font-mono-num text-xs font-extrabold">${predDisp} cm</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            // Cập nhật thanh trạng thái lộ trình trên Header & Thẻ AI
+            const routePill = document.getElementById('route-status-pill');
+            const routeDot = document.getElementById('route-status-dot');
+            const routeText = document.getElementById('route-status-text');
+            const aiCard = document.getElementById('ai-decision-card');
+            const aiText = document.getElementById('ai-decision-text');
+            const etaBadge = document.getElementById('eta-badge');
+
+            const p02 = POLES_DATA[1];
+            if (isDetourActive) {
+                routePill.className = 'flex items-center gap-2.5 px-3.5 py-1.5 rounded-xl bg-amber-500/20 border border-amber-400/60 text-amber-200 text-xs font-bold transition-all';
+                routeDot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping';
+                routeText.textContent = 'ĐÃ ĐỔI LỘ TRÌNH: Vòng qua đường cao Ngô Sĩ Liên – Âu Cơ (11 phút • Khô ráo)';
+
+                etaBadge.textContent = '⏱️ 11 phút (Né ngập)';
+                etaBadge.className = 'font-mono-num text-xs font-bold px-2 py-0.5 rounded-md bg-amber-500/25 text-amber-200';
+
+                if (p02.targetCurrentCm < EXHAUST_THRESHOLD_CM && p02.pred30mCm >= EXHAUST_THRESHOLD_CM) {
+                    aiCard.className = 'mt-3 p-3 rounded-xl bg-amber-950/40 border border-amber-400/60 transition-all';
+                    aiText.innerHTML = `⚡ <strong class="text-amber-300">Giá trị cốt lõi của AI:</strong> Hiện tại Ngã ba Tôn Đức Thắng mới ngập <strong>${p02.targetCurrentCm} cm</strong> (chưa tới ống pô 30 cm), nhưng AI tính toán lượng mưa <strong>${rainfallMmH} mm/h</strong> sẽ làm nước dâng lên <strong>${p02.pred30mCm} cm</strong> sau 30 phút ➔ <strong>Đổi sang đường đồi cao Ngô Sĩ Liên ngay từ bây giờ!</strong>`;
+                } else {
+                    aiCard.className = 'mt-3 p-3 rounded-xl bg-rose-950/40 border border-rose-400/60 transition-all';
+                    aiText.innerHTML = `🚨 <strong class="text-rose-300">Đường chính đã ngập sâu (${p02.targetCurrentCm} cm &gt; 30 cm):</strong> Đi thẳng chắc chắn chết máy xe! Hệ thống khóa lộ trình trũng và dẫn toàn bộ xe đi vòng đường cao <strong>Ngô Sĩ Liên – Âu Cơ</strong> (chỉ ${POLES_DATA[3].targetCurrentCm} cm).`;
+                }
+            } else {
+                routePill.className = 'flex items-center gap-2.5 px-3.5 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-400/40 text-emerald-300 text-xs font-bold transition-all';
+                routeDot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse';
+                routeText.textContent = 'LỘ TRÌNH ĐANG CHỌN: Đi thẳng Nguyễn Lương Bằng (6 phút)';
+
+                etaBadge.textContent = '⏱️ 6 phút (Ngắn nhất)';
+                etaBadge.className = 'font-mono-num text-xs font-bold px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300';
+
+                aiCard.className = 'mt-3 p-3 rounded-xl bg-slate-900/90 border border-emerald-400/35 transition-all';
+                aiText.innerHTML = `✅ <strong>An toàn thông suốt:</strong> Dự báo 30 phút tới tại Tôn Đức Thắng chỉ khoảng <strong>${p02.pred30mCm} cm</strong> (thấp hơn nhiều mốc ống pô 30 cm). Sinh viên yên tâm đi đường thẳng ngắn nhất!`;
+            }
+        }
+
+        // =========================================================================
+        // 6. MODAL DEMO AI KIỂM DUYỆT ẢNH CỘNG ĐỒNG (VẼ CANVAS TRỰC QUAN)
+        // =========================================================================
+        function drawSamplePhotosOnCanvas() {
+            // Ảnh 1: Cảnh đường Mẹ Suốt ngập nước nâu, xe máy ngập nửa bánh + mưa rơi
+            const c1 = document.getElementById('canvas-photo-real');
+            if (c1) {
+                const ctx = c1.getContext('2d');
+                ctx.fillStyle = '#334155';
+                ctx.fillRect(0, 0, 320, 180);
+
+                // Dãy nhà trọ hai bên hẻm
+                ctx.fillStyle = '#475569';
+                ctx.fillRect(0, 25, 85, 90);
+                ctx.fillRect(230, 30, 90, 85);
+                ctx.fillStyle = '#ef4444';
+                ctx.fillRect(0, 18, 90, 10);
+
+                // Biển tên Kiệt Mẹ Suốt
+                ctx.fillStyle = '#1d4ed8';
+                ctx.fillRect(18, 45, 58, 22);
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold 9px Inter, sans-serif';
+                ctx.fillText('MẸ SUỐT', 25, 59);
+
+                // Mặt nước ngập đục dâng cao nửa dưới ảnh
+                const grad = ctx.createLinearGradient(0, 102, 0, 180);
+                grad.addColorStop(0, '#0284c7');
+                grad.addColorStop(1, '#0c4a6e');
+                ctx.fillStyle = grad;
+                ctx.fillRect(0, 102, 320, 78);
+
+                // Gợn sóng nước trắng
+                ctx.strokeStyle = 'rgba(186, 230, 253, 0.55)';
+                ctx.lineWidth = 2;
+                for (let w = 0; w < 5; w++) {
+                    ctx.beginPath();
+                    ctx.moveTo(25 + w * 55, 128 + (w % 2) * 16);
+                    ctx.lineTo(65 + w * 55, 128 + (w % 2) * 16);
+                    ctx.stroke();
+                }
+
+                // Xe máy bị ngập nửa bánh giữa dòng nước
+                ctx.fillStyle = '#facc15';
+                ctx.fillRect(138, 86, 46, 24);
+                ctx.fillStyle = '#0f172a';
+                ctx.beginPath(); ctx.arc(144, 114, 12, 0, Math.PI, true); ctx.fill();
+                ctx.beginPath(); ctx.arc(178, 114, 12, 0, Math.PI, true); ctx.fill();
+
+                // Khung xanh AI Object Detection nhận diện vùng nước ngập
+                ctx.strokeStyle = '#22c55e';
+                ctx.lineWidth = 2.5;
+                ctx.setLineDash([6, 4]);
+                ctx.strokeRect(8, 98, 304, 74);
+                ctx.setLineDash([]);
+                ctx.fillStyle = '#22c55e';
+                ctx.fillRect(8, 80, 138, 18);
+                ctx.fillStyle = '#052e16';
+                ctx.font = 'bold 10px JetBrains Mono, monospace';
+                ctx.fillText('Vung_Ngap_Nuoc: 96%', 13, 93);
+            }
+
+            // Ảnh 2: Mặt đường nắng đẹp khô ráo hoàn toàn
+            const c2 = document.getElementById('canvas-photo-fake');
+            if (c2) {
+                const ctx = c2.getContext('2d');
+                // Trời xanh nắng vàng
+                ctx.fillStyle = '#38bdf8';
+                ctx.fillRect(0, 0, 320, 95);
+                ctx.fillStyle = '#fde047';
+                ctx.beginPath(); ctx.arc(270, 35, 20, 0, Math.PI * 2); ctx.fill();
+
+                // Mặt đường nhựa khô ráo + vạch kẻ trắng rõ nét
+                ctx.fillStyle = '#334155';
+                ctx.fillRect(0, 95, 320, 85);
+                ctx.fillStyle = '#f8fafc';
+                for (let x = 20; x < 300; x += 65) {
+                    ctx.fillRect(x, 134, 36, 6);
+                }
+
+                // Cây xanh ven đường
+                ctx.fillStyle = '#16a34a';
+                ctx.beginPath(); ctx.arc(55, 78, 24, 0, Math.PI * 2); ctx.fill();
+            }
+        }
+
+        function openPhotoModal() {
+            const m = document.getElementById('photo-modal');
+            m.classList.remove('hidden');
+            m.classList.add('flex');
+            drawSamplePhotosOnCanvas();
+        }
+
+        function closePhotoModal() {
+            const m = document.getElementById('photo-modal');
+            m.classList.add('hidden');
+            m.classList.remove('flex');
+        }
+
+        function verifyPhotoWithAI(kind) {
+            const resBox = document.getElementById('photo-ai-result');
+            if (kind === 'real') {
+                communityPinActive = true;
+                if (communityPinMesh) communityPinMesh.visible = true;
+                document.getElementById('community-pin-badge').classList.remove('hidden');
+                playChime('ok');
+
+                resBox.className = 'p-4 rounded-2xl bg-emerald-950/60 border border-emerald-400/60 text-xs text-emerald-100 leading-relaxed';
+                resBox.innerHTML = `
+                    ✅ <strong>KẾT QUẢ AI THỊ GIÁC MÁY TÍNH: HỢP LỆ (Độ tin cậy: 96.4%)</strong><br>
+                    • AI nhận diện rõ mặt nước đục bao phủ mặt đường và ngập 1/2 bánh xe máy (ước tính ~25–30 cm).<br>
+                    • Hệ thống đã tự động <strong>làm mờ biển số xe</strong> để bảo vệ quyền riêng tư và <strong>cắm ghim đỏ cảnh báo trực tiếp lên khu vực Mẹ Suốt trên sa bàn 3D!</strong>
+                `;
+            } else {
+                playChime('warn');
+                resBox.className = 'p-4 rounded-2xl bg-rose-950/60 border border-rose-400/60 text-xs text-rose-100 leading-relaxed';
+                resBox.innerHTML = `
+                    🚫 <strong>KẾT QUẢ AI THỊ GIÁC MÁY TÍNH: TỪ CHỐI ĐĂNG (Chỉ 3.8% giống ngập lụt)</strong><br>
+                    • AI phát hiện vạch kẻ đường khô ráo rõ nét, không có vùng phản xạ mặt nước.<br>
+                    • Hệ thống tự động chặn bài đăng sai sự thật để tránh gây hoang mang cho sinh viên!
+                `;
+            }
+        }
+
+        function openTeacherNoteModal() {
+            const m = document.getElementById('teacher-modal');
+            m.classList.remove('hidden');
+            m.classList.add('flex');
+        }
+
+        function closeTeacherNoteModal() {
+            const m = document.getElementById('teacher-modal');
+            m.classList.add('hidden');
+            m.classList.remove('flex');
+        }
+
+        function onResize() {
+            const container = document.getElementById('canvas-container');
             camera.aspect = container.clientWidth / container.clientHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(container.clientWidth, container.clientHeight);
-        });
+        }
 
-        // Interactive Functions
-        function updateRain(val) {
-            document.getElementById('rain-val').innerText = val;
-            
-            let waterHeight = (val / 150) * 1.8;
-            waterPlane.position.y = 0.05 + waterHeight;
-            waterMat.opacity = 0.2 + (val / 150) * 0.5;
+        // =========================================================================
+        // 7. VÒNG LẶP DIỄN HOẠT 60FPS (NƯỚC DÂNG, MƯA RƠI, XE CHẠY & ĐÈN CỘT IOT)
+        // =========================================================================
+        const clock = new THREE.Clock();
 
-            let s1 = Math.round(val * 0.3);
-            let s2 = Math.round(val * 0.45);
-            
-            document.getElementById('sensor-1').innerHTML = `${s1} cm <span class="text-xs font-normal text-slate-400">(${s1 > 35 ? 'Nguy hiểm' : 'An toàn'})</span>`;
-            document.getElementById('sensor-2').innerHTML = `${s2} cm <span class="text-xs font-normal text-slate-400">(${s2 > 35 ? 'Nguy hiểm' : 'An toàn'})</span>`;
+        function animate() {
+            requestAnimationFrame(animate);
 
-            let badge = document.getElementById('status-badge');
-            let aiText = document.getElementById('ai-prediction-text');
+            const dt = Math.min(clock.getDelta(), 0.1);
+            const elapsed = clock.getElapsedTime();
 
-            if(val < 30) {
-                badge.className = "px-2.5 py-1 rounded text-xs font-semibold bg-emerald-900/60 text-emerald-400 border border-emerald-700";
-                badge.innerText = "Trạng thái: An toàn";
-                aiText.innerText = "Lượng mưa thấp, các tuyến đường xung quanh trường thông thoáng hoàn toàn.";
-                waterMat.color.setHex(0x3b82f6);
-            } else if(val < 90) {
-                badge.className = "px-2.5 py-1 rounded text-xs font-semibold bg-amber-900/60 text-amber-400 border border-amber-700";
-                badge.innerText = "Trạng thái: Cảnh báo ngập nhẹ";
-                aiText.innerText = "AI dự báo: Ngã ba Tôn Đức Thắng sẽ ngập 32 cm sau 30 phút nữa. Đề xuất xe máy đi chậm hoặc đổi hướng.";
-                waterMat.color.setHex(0xd97706);
+            // 1. Nội suy mượt mực nước tại 4 cột đo & đổi màu đèn LED trên đỉnh cột IoT
+            POLES_DATA.forEach(p => {
+                p.currentCm += (p.targetCurrentCm - p.currentCm) * 0.06;
+
+                if (p.ledMat && p.ptLight) {
+                    if (p.currentCm >= EXHAUST_THRESHOLD_CM) {
+                        // Đèn Đỏ nhấp nháy khi ngập lút ống pô > 30cm
+                        const blink = Math.sin(elapsed * 12) > 0;
+                        p.ledMat.color.setHex(blink ? 0xf43f5e : 0x7f1d1d);
+                        p.ptLight.color.setHex(0xf43f5e);
+                        p.ptLight.intensity = blink ? 1.8 : 0.35;
+                    } else if (p.currentCm >= 15 || p.pred30mCm >= EXHAUST_THRESHOLD_CM) {
+                        // Đèn Vàng cam khi ngập nhẹ hoặc AI cảnh báo sắp ngập
+                        p.ledMat.color.setHex(0xfbbf24);
+                        p.ptLight.color.setHex(0xfbbf24);
+                        p.ptLight.intensity = 1.2;
+                    } else {
+                        // Đèn Xanh lá an toàn
+                        p.ledMat.color.setHex(0x10b981);
+                        p.ptLight.color.setHex(0x10b981);
+                        p.ptLight.intensity = 0.8;
+                    }
+                }
+            });
+
+            // 2. Cập nhật chiều cao mặt nước ngập 3D tại Mẹ Suốt (P03) và Tôn Đức Thắng (P02)
+            const cmMeSuot = POLES_DATA[2].currentCm;
+            if (cmMeSuot > 2) {
+                floodWaterMeshLow.visible = true;
+                const waterYLow = -0.58 + (cmMeSuot / 100) * 1.35 + Math.sin(elapsed * 3.5) * 0.012;
+                floodWaterMeshLow.position.y = waterYLow;
             } else {
-                badge.className = "px-2.5 py-1 rounded text-xs font-semibold bg-red-900/60 text-red-400 border border-red-700";
-                badge.innerText = "Trạng thái: Ngập sâu nguy hiểm";
-                aiText.innerText = "AI dự báo: Khu vực Mẹ Suốt ngập sâu >50cm. Kích hoạt đèn cảnh báo đỏ và chuyển toàn bộ lộ trình sang đường cao.";
-                waterMat.color.setHex(0xdc2626);
+                floodWaterMeshLow.visible = false;
             }
-        }
 
-        function setScenario(type) {
-            let slider = document.getElementById('rain-slider');
-            if(type === 1) slider.value = 15;
-            if(type === 2) slider.value = 95;
-            if(type === 3) slider.value = 140;
-            updateRain(slider.value);
-        }
-
-        function testImageAI(isReal) {
-            let resBox = document.getElementById('ai-image-result');
-            if(isReal) {
-                resBox.className = "bg-emerald-950/60 p-3 rounded-lg border border-emerald-700 text-xs text-emerald-200";
-                resBox.innerHTML = "✅ <b>AI Phê duyệt thành công:</b> Phát hiện đúng hình ảnh ngập nước tại đường Tôn Đức Thắng (Độ tin cậy: 96%). Đã tự động cập nhật điểm ngập lên bản đồ!";
+            const cmTonDucThang = POLES_DATA[1].currentCm;
+            if (cmTonDucThang > 3) {
+                floodWaterMeshMain.visible = true;
+                const waterYMain = -0.25 + (cmTonDucThang / 100) * 1.25 + Math.cos(elapsed * 3.2) * 0.01;
+                floodWaterMeshMain.position.y = waterYMain;
             } else {
-                resBox.className = "bg-red-950/60 p-3 rounded-lg border border-red-700 text-xs text-red-200";
-                resBox.innerHTML = "❌ <b>AI Từ chối (Lọc rác):</b> Ảnh không phải cảnh ngập lụt (phát hiện ảnh meme/đồ vật khác). Hệ thống đã chặn không cho lên bản đồ.";
+                floodWaterMeshMain.visible = false;
             }
+
+            // 3. Cập nhật hạt mưa 3D rơi theo lượng mưa mm/h
+            if (rainPoints) {
+                if (rainfallMmH <= 2) {
+                    rainPoints.material.opacity = 0.0;
+                } else {
+                    rainPoints.material.opacity = Math.min(0.78, 0.18 + (rainfallMmH / 150) * 0.6);
+                    const posAttr = rainPoints.geometry.attributes.position;
+                    const speedScale = 0.6 + (rainfallMmH / 100) * 1.1;
+
+                    for (let i = 0; i < posAttr.count; i++) {
+                        let y = posAttr.getY(i) - rainVelocities[i] * speedScale * dt;
+                        let x = posAttr.getX(i) - 1.5 * dt; // Mưa xiên nhẹ trong gió
+                        if (y < -0.5) {
+                            y = 17.5;
+                            x = (Math.random() - 0.5) * 32;
+                        }
+                        posAttr.setY(i, y);
+                        posAttr.setX(i, x);
+                    }
+                    posAttr.needsUpdate = true;
+                }
+            }
+
+            // 4. Hiệu ứng chuyển đổi Vệt sáng Lộ trình 3D & Đàn xe máy sinh viên tự rẽ né ngập
+            const activeCurve = isDetourActive ? detourCurve : directCurve;
+
+            directRouteLineMat.opacity += ((isDetourActive ? 0.12 : 0.85) - directRouteLineMat.opacity) * 0.08;
+            directRouteLineMat.color.setHex(isDetourActive ? 0xf43f5e : 0x06b6d4);
+            detourRouteLineMat.opacity += ((isDetourActive ? 0.92 : 0.12) - detourRouteLineMat.opacity) * 0.08;
+
+            directRouteArrows.forEach(a => {
+                a.t = (a.t + dt * 0.18) % 1.0;
+                const pt = directCurve.getPointAt(a.t);
+                const tangent = directCurve.getTangentAt(a.t);
+                a.mesh.position.copy(pt).add(new THREE.Vector3(0, 0.2, 0));
+                a.mesh.lookAt(a.mesh.position.clone().add(tangent));
+                a.mat.opacity = isDetourActive ? 0.0 : 0.95;
+            });
+
+            detourRouteArrows.forEach(a => {
+                a.t = (a.t + dt * 0.15) % 1.0;
+                const pt = detourCurve.getPointAt(a.t);
+                const tangent = detourCurve.getTangentAt(a.t);
+                a.mesh.position.copy(pt).add(new THREE.Vector3(0, 0.22, 0));
+                a.mesh.lookAt(a.mesh.position.clone().add(tangent));
+                a.mat.opacity = isDetourActive ? 0.98 : 0.0;
+            });
+
+            // Di chuyển các xe máy sinh viên dọc theo lộ trình đang được chọn
+            studentScooters.forEach(sc => {
+                sc.progress = (sc.progress + dt * sc.speed) % 1.0;
+                const pt = activeCurve.getPointAt(sc.progress);
+                const tangent = activeCurve.getTangentAt(sc.progress);
+                sc.mesh.position.copy(pt).add(new THREE.Vector3(0, 0.06, 0));
+                sc.mesh.lookAt(sc.mesh.position.clone().add(tangent));
+            });
+
+            // Vòng cảnh báo đỏ dưới mặt đường trũng khi ngập / AI dự báo sắp ngập
+            if (isDetourActive) {
+                const pulse = 0.45 + 0.45 * Math.sin(elapsed * 6);
+                hazardZoneRing1.material.opacity = pulse;
+                hazardZoneRing2.material.opacity = pulse;
+                const s = 1 + 0.08 * Math.sin(elapsed * 6);
+                hazardZoneRing1.scale.set(s, s, 1);
+                hazardZoneRing2.scale.set(s, s, 1);
+            } else {
+                hazardZoneRing1.material.opacity = 0;
+                hazardZoneRing2.material.opacity = 0;
+            }
+
+            // Nhịp nảy nhẹ cho ghim 3D Báo ngập cộng đồng
+            if (communityPinActive && communityPinMesh) {
+                communityPinMesh.position.y = 0.35 + Math.abs(Math.sin(elapsed * 4.5)) * 0.35;
+                communityPinMesh.rotation.y += dt * 1.8;
+            }
+
+            // Chuyển góc nhìn Camera mượt
+            if (cameraLerpPos && targetLerpPos) {
+                camera.position.lerp(cameraLerpPos, 0.06);
+                controls.target.lerp(targetLerpPos, 0.06);
+                if (camera.position.distanceTo(cameraLerpPos) < 0.12) {
+                    cameraLerpPos = null;
+                    targetLerpPos = null;
+                }
+            }
+
+            controls.update();
+            updateFloatingLabels();
+            renderer.render(scene, camera);
         }
+
+        window.onload = function () {
+            initThreeWorld();
+            recalculateWaterAndForecast();
+            animate();
+        };
     </script>
 </body>
 </html>
